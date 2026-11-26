@@ -1,5 +1,9 @@
 # Every push and pull request: build, unit tests, lint, and the shrunk
 # release APKs, so a change that breaks any of them shows up here first.
+#
+# Upstream only. The desktop, iOS and website jobs need secrets, services and
+# SDKs a fork does not have, so on a fork they fail for reasons that have
+# nothing to do with the change; a fork runs android-tests.yml instead.
 name: CI
 
 on:
@@ -15,6 +19,7 @@ concurrency:
 jobs:
   # UI regressions must still run when unrelated service/website checks fail.
   android-ui:
+    if: ${{ github.repository == 'justshivv/Opentune' }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
@@ -104,6 +109,7 @@ jobs:
           if-no-files-found: ignore
 
   build:
+    if: ${{ github.repository == 'justshivv/Opentune' }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -181,6 +187,7 @@ jobs:
 
   # The desktop app: its tests, and an installer for each system.
   desktop:
+    if: ${{ github.repository == 'justshivv/Opentune' }}
     strategy:
       fail-fast: false
       matrix:
@@ -249,6 +256,7 @@ jobs:
           if-no-files-found: error
 
   website:
+    if: ${{ github.repository == 'justshivv/Opentune' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
