@@ -34,7 +34,7 @@ class SpokenTest {
     fun theRequestIsTheQueryOrTheNamesItSent() {
         assertEquals("blinding lights", SpokenRequest("  blinding lights ").text)
         assertEquals("Blinding Lights The Weeknd", SpokenRequest(title = "Blinding Lights", artist = " The Weeknd ").text)
-        assertEquals("Abbey Road The Beatles", SpokenRequest(album = "Abbey Road", artist = "The Beatles", focus = FOCUS_ALBUM).text)
+        assertEquals("Abbey Road The Beatles", SpokenRequest(album = "Abbey Road", artist = "The Beatles", kind = VoiceFocus.ALBUM).text)
         assertEquals("", SpokenRequest().text)
     }
 
@@ -58,7 +58,7 @@ class SpokenTest {
             Song("abbey2", "Something", "The Beatles", null),
         )
         val queued = spokenSongs(
-            SpokenRequest(album = "Abbey Road", artist = "The Beatles", focus = FOCUS_ALBUM),
+            SpokenRequest(album = "Abbey Road", artist = "The Beatles", kind = VoiceFocus.ALBUM),
             search = { _, filter ->
                 // Another album of the same artist leads; the request named this one.
                 if (filter == SearchFilter.ALBUMS) listOf(SearchResult.Browse(letItBe), SearchResult.Browse(abbey)) else emptyList()
@@ -72,7 +72,7 @@ class SpokenTest {
     fun anArtistRequestQueuesTheArtistsSongs() = runBlocking {
         val tracks = listOf(Song("help1", "Help!", "The Beatles", null))
         val queued = spokenSongs(
-            SpokenRequest(artist = "The Beatles", focus = FOCUS_ARTIST),
+            SpokenRequest(artist = "The Beatles", kind = VoiceFocus.ARTIST),
             search = { _, filter -> if (filter == SearchFilter.ARTISTS) listOf(SearchResult.Browse(beatles)) else emptyList() },
             songsOf = { type, id -> if (type == BrowseType.ARTIST && id == beatles.browseId) tracks else emptyList() },
         )
@@ -83,7 +83,7 @@ class SpokenTest {
     fun anAlbumRequestThatFindsNoAlbumQueuesNothing() = runBlocking {
         // No song of another result is played instead: the car fails the request and keeps playing.
         val queued = spokenSongs(
-            SpokenRequest(album = "Abbey Road", focus = FOCUS_ALBUM),
+            SpokenRequest(album = "Abbey Road", kind = VoiceFocus.ALBUM),
             search = { _, _ -> emptyList() },
             songsOf = { _, _ -> emptyList() },
         )

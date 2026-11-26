@@ -47,12 +47,7 @@ import java.util.concurrent.ConcurrentHashMap
 class CarLibrary(
     private val context: Context,
     /** An album's or an artist's songs, given as an argument so a test can answer without the network. */
-    private val browseSongs: suspend (BrowseType, String) -> List<Song> = { type, id ->
-        when (type) {
-            BrowseType.ARTIST -> MusicRepository.artist(id).songs
-            else -> MusicRepository.collection(id).songs
-        }
-    },
+    private val browseSongs: suspend (BrowseType, String) -> List<Song> = ::pageSongs,
     /** YouTube search, given as an argument so a test can answer without the network. */
     private val remoteSearch: suspend (String, SearchFilter) -> List<SearchResult> = MusicRepository::search,
 ) {

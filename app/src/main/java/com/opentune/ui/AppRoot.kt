@@ -431,14 +431,7 @@ fun AppRoot(vm: PlayerViewModel) {
                 } else {
                     // An album or an artist the request focused on queues that whole page; otherwise
                     // the song it named, not just the first of the mixed search, with radio following it.
-                    val songs = runCatching {
-                        spokenSongs(request, MusicRepository::search) { type, id ->
-                            when (type) {
-                                BrowseType.ARTIST -> MusicRepository.artist(id).songs
-                                else -> MusicRepository.collection(id).songs
-                            }
-                        }
-                    }.getOrDefault(emptyList())
+                    val songs = runCatching { spokenSongs(request) }.getOrDefault(emptyList())
                     when {
                         songs.isEmpty() -> com.opentune.data.Pills.error(com.opentune.i18n.Tr.f("Nothing found for \"{0}\"", text))
                         request.kind == VoiceFocus.SONG -> vm.play(songs.first(), text)

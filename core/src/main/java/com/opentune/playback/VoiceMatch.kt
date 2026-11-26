@@ -20,7 +20,7 @@ fun bestVoiceMatch(songs: List<Song>, query: String, title: String?, artist: Str
  * An album row reads "Album • The Beatles • 1969", so the credit is what follows the kind word:
  * every "Abbey Road" would otherwise tie on its artist and the first one listed would win.
  */
-fun bestVoiceBrowse(items: List<BrowseItem>, query: String, title: String?, artist: String?): BrowseItem? =
+internal fun bestVoiceBrowse(items: List<BrowseItem>, query: String, title: String?, artist: String?): BrowseItem? =
     bestOf(items, query, title, artist, name = { titleKey(it.title) }, credit = { norm(InnertubeParser.artistFromSubtitle(it.subtitle)) })
 
 /** The item the request names most; the first one when nothing it said is in any of them. */
