@@ -8,12 +8,16 @@ import com.opentune.data.model.SearchFilter
 import com.opentune.data.model.SearchResult
 import com.opentune.data.model.Song
 
-/** What a spoken request wants queued, as EXTRA_MEDIA_FOCUS says: an album, an artist, or a song. */
-enum class VoiceFocus { SONG, ALBUM, ARTIST }
+/**
+ * What a spoken request wants queued: an album, an artist, a playlist, or a song, as
+ * EXTRA_MEDIA_FOCUS says or as the request's own words name it.
+ */
+enum class VoiceFocus { SONG, ALBUM, ARTIST, PLAYLIST }
 
-/** EXTRA_MEDIA_FOCUS's album and artist values, as the Assistant and Android Auto send them. */
+/** EXTRA_MEDIA_FOCUS's album, artist and playlist values, as the Assistant and Android Auto send them. */
 internal const val FOCUS_ALBUM = "vnd.android.cursor.item/album"
 internal const val FOCUS_ARTIST = "vnd.android.cursor.item/artist"
+internal const val FOCUS_PLAYLIST = "vnd.android.cursor.item/playlist"
 
 /**
  * "Play … on OpenTune" as the Assistant sends it: the words it sent, and the title, artist and
@@ -29,7 +33,7 @@ data class SpokenRequest(
 ) {
     /** The words to search for: the query itself, or what the request named. */
     val text: String
-        get() = query.trim().ifEmpty { names(title, album, artist) }
+        get() = withoutFocusWord(query.trim().ifEmpty { names(title, album, artist) })
 
     /**
      * The words a song search uses: the query, or just the title and artist. The album names the
@@ -42,14 +46,49 @@ data class SpokenRequest(
 private fun names(vararg parts: String?): String =
     parts.mapNotNull { it?.trim() }.filter { it.isNotEmpty() }.joinToString(" ")
 
-internal fun voiceFocus(focus: String?): VoiceFocus {
+/** The words that name a kind of page rather than a name to search for, and what they ask for. */
+private val WORD_HINTS = mapOf(
+    "album" to VoiceFocus.ALBUM,
+    "playlist" to VoiceFocus.PLAYLIST,
+)
+
+/** Words a spoken request opens with that name nothing in particular. */
+private val FILLER_WORDS = setOf("play", "the", "my", "some")
+
+/**
+ * "play the album abbey road" searches "abbey road": the word naming the kind is not a name.
+ * Only once such a word is there is the opening "play the" taken off as well, so a title that
+ * starts with "The" is left as it is.
+ */
+private fun withoutFocusWord(text: String): String {
+    val parts = text.split(' ')
+    val kept = parts.filterNot { it.plain() in WORD_HINTS }
+    if (kept.size == parts.size) return text
+    return kept.dropWhile { it.plain() in FILLER_WORDS }.joinToString(" ").trim().ifEmpty { text }
+}
+
+private fun String.plain() = lowercase().trim { !it.isLetterOrDigit() }
+
+/**
+ * What kind of page the request wants. EXTRA_MEDIA_FOCUS names it when it can: an album or an
+ * artist the Assistant focused on. The Assistant's handoff to a media app sends only the query
+ * and a wildcard focus ([WILDCARD_FOCUS]), so there the request's own words decide: "play the
+ * album …" searches albums, "play my playlist …" playlists.
+ */
+internal fun voiceFocus(focus: String?, query: String = ""): VoiceFocus {
     val value = focus?.lowercase().orEmpty()
     return when {
         "album" in value -> VoiceFocus.ALBUM
         "artist" in value -> VoiceFocus.ARTIST
-        else -> VoiceFocus.SONG
+        "playlist" in value -> VoiceFocus.PLAYLIST
+        // No kind named above, so the request's own word is all there is to go on.
+        else -> query.lowercase().split(Regex("[^\\p{L}\\p{N}]+")).firstNotNullOfOrNull { WORD_HINTS[it] }
+            ?: VoiceFocus.SONG
     }
 }
+
+/** The focus the Assistant's media handoff sends: it names no kind, only the query does. */
+internal const val WILDCARD_FOCUS = "vnd.android.cursor.item/*"
 
 /** A spoken request read off the search intent's or the media item's extras. */
 fun spokenRequest(query: String?, extras: Bundle?): SpokenRequest = SpokenRequest(
@@ -57,7 +96,7 @@ fun spokenRequest(query: String?, extras: Bundle?): SpokenRequest = SpokenReques
     title = extras?.text(MediaStore.EXTRA_MEDIA_TITLE),
     artist = extras?.text(MediaStore.EXTRA_MEDIA_ARTIST),
     album = extras?.text(MediaStore.EXTRA_MEDIA_ALBUM),
-    kind = voiceFocus(extras?.text(MediaStore.EXTRA_MEDIA_FOCUS)),
+    kind = voiceFocus(extras?.text(MediaStore.EXTRA_MEDIA_FOCUS), query.orEmpty()),
 )
 
 private fun Bundle.text(key: String): String? =
@@ -88,20 +127,33 @@ suspend fun spokenSongs(
     search: suspend (String, SearchFilter) -> List<SearchResult>,
     songsOf: suspend (BrowseType, String) -> List<Song>,
 ): List<Song> {
-    return if (request.kind == VoiceFocus.SONG) song(request, search) else page(request, search, songsOf)
+    return if (request.kind == VoiceFocus.SONG) song(request, search, songsOf) else page(request, search, songsOf)
 }
 
-/** The song the request named. */
+/** The song the request named, or the album whose name it is. */
 private suspend fun song(
     request: SpokenRequest,
     search: suspend (String, SearchFilter) -> List<SearchResult>,
+    songsOf: suspend (BrowseType, String) -> List<Song>,
 ): List<Song> {
     val text = request.songText
     if (text.isEmpty()) return emptyList()
     // Not simply YouTube's first: "money for nothing dire straits" leads with Yelawolf's
     // "Money". Songs only if the mixed search has none.
     val found = songsIn(search(text, SearchFilter.ALL)).ifEmpty { songsIn(search(text, SearchFilter.SONGS)) }
-    return listOfNotNull(bestVoiceMatch(found, request.query, request.title, request.artist))
+    val best = bestVoiceMatch(found, request.query, request.title, request.artist)
+    // "Play abbey road by the beatles" reaches a media app as a wildcard focus with only those
+    // words, so it looks like a song request and the song that wins is a song off the album.
+    // When the song is not one the words name but an album's name is, the album was the request.
+    if (best == null || !requestNamesSong(best, request.query, request.title, request.artist)) {
+        val album = requestNamesAlbum(
+            search(text, SearchFilter.ALBUMS).mapNotNull { (it as? SearchResult.Browse)?.item },
+            request.query,
+            request.title,
+        )
+        if (album != null) return songsOf(BrowseType.ALBUM, album.browseId)
+    }
+    return listOfNotNull(best)
 }
 
 /**
@@ -119,13 +171,20 @@ private suspend fun page(
 ): List<Song> {
     val text = request.text
     if (text.isEmpty()) return emptyList()
-    val album = request.kind == VoiceFocus.ALBUM
-    val rows = search(text, if (album) SearchFilter.ALBUMS else SearchFilter.ARTISTS)
-        .mapNotNull { (it as? SearchResult.Browse)?.item }
+    val (filter, type) = when (request.kind) {
+        VoiceFocus.ALBUM -> SearchFilter.ALBUMS to BrowseType.ALBUM
+        VoiceFocus.PLAYLIST -> SearchFilter.PLAYLISTS to BrowseType.PLAYLIST
+        else -> SearchFilter.ARTISTS to BrowseType.ARTIST
+    }
+    val rows = search(text, filter).mapNotNull { (it as? SearchResult.Browse)?.item }
     // An album is named by its album extra, and its artist settles two of the same name; an
     // artist row's credit is its own name, so asking for it again would not tell any apart.
-    val named = if (album) request.album ?: request.title else request.artist ?: request.title
-    val found = bestVoiceBrowse(rows, request.query, named, if (album) request.artist else null)
+    val named = when (request.kind) {
+        VoiceFocus.ALBUM -> request.album ?: request.title
+        VoiceFocus.PLAYLIST -> request.title ?: request.album
+        else -> request.artist ?: request.title
+    }
+    val found = bestVoiceBrowse(rows, request.query, named, if (request.kind == VoiceFocus.ALBUM) request.artist else null)
         ?: return emptyList()
-    return songsOf(if (album) BrowseType.ALBUM else BrowseType.ARTIST, found.browseId)
+    return songsOf(type, found.browseId)
 }

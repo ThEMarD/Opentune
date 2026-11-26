@@ -23,6 +23,43 @@ fun bestVoiceMatch(songs: List<Song>, query: String, title: String?, artist: Str
 internal fun bestVoiceBrowse(items: List<BrowseItem>, query: String, title: String?, artist: String?): BrowseItem? =
     bestOf(items, query, title, artist, name = { titleKey(it.title) }, credit = { norm(InnertubeParser.artistFromSubtitle(it.subtitle)) })
 
+/** What the request said, as words: the name it sent, or the words it was given. */
+private fun asked(query: String, title: String?): List<String> =
+    words(title?.let(::titleKey)?.takeIf { it.isNotEmpty() } ?: query)
+
+/**
+ * Whether [song] is exactly what the request said, by its name or by its name and its artist.
+ * "Money for nothing dire straits" is Dire Straits' "Money for Nothing" and nothing else is,
+ * which is how a song outranks an album of the same name.
+ */
+internal fun requestNamesSong(song: Song, query: String, title: String?, artist: String?): Boolean =
+    says(
+        asked(query, title),
+        words(titleKey(song.title)),
+        words(artist ?: song.artist),
+    )
+
+/**
+ * The album whose name, on its own or with its artist, is exactly what the request said: as an
+ * album row reads "Abbey Road" over "The Beatles • 1969 • 17 songs", "abbey road the beatles"
+ * names it and "abbey road" alone does too.
+ */
+internal fun requestNamesAlbum(items: List<BrowseItem>, query: String, title: String?): BrowseItem? {
+    val wanted = asked(query, title)
+    if (wanted.isEmpty()) return null
+    return items.firstOrNull { item ->
+        says(
+            wanted,
+            words(titleKey(item.title)),
+            words(InnertubeParser.artistFromSubtitle(item.subtitle)),
+        )
+    }
+}
+
+/** Whether [wanted] is the [name] alone, or the name with its [credit], either way round. */
+private fun says(wanted: List<String>, name: List<String>, credit: List<String>): Boolean =
+    wanted.isNotEmpty() && (wanted == name || wanted == name + credit || wanted == credit + name)
+
 /** The item the request names most; the first one when nothing it said is in any of them. */
 private fun <T> bestOf(
     items: List<T>,
