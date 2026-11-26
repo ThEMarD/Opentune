@@ -1,12 +1,16 @@
 package com.opentune.playback
 
 import android.app.Application
+import android.os.Bundle
+import android.provider.MediaStore
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.util.UnstableApi
 import androidx.test.core.app.ApplicationProvider
 import com.opentune.data.history.History
 import com.opentune.data.library.LibraryStore
+import com.opentune.data.model.SearchFilter
+import com.opentune.data.model.SearchResult
 import com.opentune.data.model.Song
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -123,4 +127,49 @@ class CarLibraryTest {
         val queue = car.resolve(listOf(spoken), 0, 0L)
         assertEquals(songs.map { it.videoId }.toSet(), queue.mediaItems.map { it.mediaId }.toSet())
     }
+
+    @Test
+    fun aSpokenRequestPlaysTheSongItNamesNotYouTubesFirst() = runBlocking {
+        val yelawolf = Song("yelawolf1", "Money (feat. Jelly Roll & Struggle Jennings)", "Yelawolf", null)
+        val dire = Song("dire1", "Money for Nothing (Remastered 1996)", "Dire Straits", null)
+        // YouTube leads with a song that names one of the words; the request names five.
+        val searchCar = CarLibrary(context) { _, _ -> listOf(SearchResult.Track(yelawolf), SearchResult.Track(dire)) }
+        val queue = searchCar.resolve(listOf(spokenItem("money for nothing dire straits")), 0, 0L)
+        assertEquals(listOf(dire.videoId), queue.mediaItems.map { it.mediaId })
+    }
+
+    @Test
+    fun theTitleAndArtistTheAssistantSentSettleTheSong() = runBlocking {
+        val cover = Song("cover1", "Wonderboy", "Some Cover Band", null)
+        val original = Song("tenacious1", "Wonderboy", "Tenacious D", null)
+        val searchCar = CarLibrary(context) { _, _ -> listOf(SearchResult.Track(cover), SearchResult.Track(original)) }
+        val queue = searchCar.resolve(listOf(spokenItem("", "Wonderboy", "Tenacious D")), 0, 0L)
+        assertEquals(listOf(original.videoId), queue.mediaItems.map { it.mediaId })
+    }
+
+    @Test
+    fun theSongsSearchAnswersWhenTheMixedOneHasNoSong() = runBlocking {
+        val song = Song("only1", "Wonderboy", "Tenacious D", null)
+        val searchCar = CarLibrary(context) { _, filter ->
+            if (filter == SearchFilter.ALL) emptyList() else listOf(SearchResult.Track(song))
+        }
+        val queue = searchCar.resolve(listOf(spokenItem("wonderboy")), 0, 0L)
+        assertEquals(listOf(song.videoId), queue.mediaItems.map { it.mediaId })
+    }
+
+    /** A spoken request as the Assistant sends it, with the title and artist it named if any. */
+    private fun spokenItem(query: String, title: String? = null, artist: String? = null): MediaItem = MediaItem.Builder()
+        .setMediaId("androidx.media3.session.legacy")
+        .setRequestMetadata(
+            MediaItem.RequestMetadata.Builder()
+                .setSearchQuery(query)
+                .setExtras(
+                    Bundle().apply {
+                        title?.let { putString(MediaStore.EXTRA_MEDIA_TITLE, it) }
+                        artist?.let { putString(MediaStore.EXTRA_MEDIA_ARTIST, it) }
+                    },
+                )
+                .build(),
+        )
+        .build()
 }

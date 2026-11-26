@@ -172,9 +172,18 @@ class CarLibrary(
             // "Play music": what was played lately, or the liked songs.
             History.recents(History.records.value, MAX_SONGS).ifEmpty { LibraryStore.liked.value.map { it.toSong() } }.shuffled()
         } else {
-            // The mixed search leads with YouTube's best match; songs only if it has none.
-            remoteSearch(text, SearchFilter.ALL).firstNotNullOfOrNull(::songOf)?.let(::listOf)
-                ?: remoteSearch(text, SearchFilter.SONGS).mapNotNull(::songOf).take(1)
+            // The song the request named, not simply YouTube's first: "money for nothing dire
+            // straits" leads with Yelawolf's "Money". Songs only if the mixed search has none.
+            val found = remoteSearch(text, SearchFilter.ALL).mapNotNull(::songOf)
+                .ifEmpty { remoteSearch(text, SearchFilter.SONGS).mapNotNull(::songOf) }
+            listOfNotNull(
+                bestVoiceMatch(
+                    found,
+                    query = query,
+                    title = extras?.getString(MediaStore.EXTRA_MEDIA_TITLE),
+                    artist = extras?.getString(MediaStore.EXTRA_MEDIA_ARTIST),
+                ),
+            )
         }
         // In logcat (debug builds), beside onSearch's line, so an Assistant request can be
         // told from a typed car search. Before the guard, so a request that finds nothing

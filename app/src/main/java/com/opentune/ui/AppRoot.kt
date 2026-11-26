@@ -11,6 +11,7 @@ import com.opentune.ui.server.ServerArtistScreen
 import com.opentune.ui.server.ServerArtistsScreen
 import com.opentune.ui.server.ServerNav
 import com.opentune.ui.server.ServerPlaylistScreen
+import com.opentune.playback.bestVoiceMatch
 import com.opentune.ui.server.ServerScreen
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.animation.EnterExitState
@@ -417,14 +418,17 @@ fun AppRoot(vm: PlayerViewModel) {
             is LinkTarget.Player -> playerOpen = true
             is LinkTarget.PlaySearch -> {
                 vm.player.connected.first { it }
-                if (link.query.isBlank()) {
+                val text = playQuery(link.query, link.title, link.artist)
+                if (text.isBlank()) {
                     val recent = com.opentune.data.history.History.recents(com.opentune.data.history.History.records.value, 50)
                     if (recent.isNotEmpty()) vm.playAll(recent, 0, true, "Recently played")
                 } else {
-                    // YouTube's best match leads the mixed search; autoplay follows it with radio.
-                    val match = runCatching { MusicRepository.search(link.query, SearchFilter.ALL) }.getOrDefault(emptyList())
-                        .firstNotNullOfOrNull { (it as? SearchResult.TopTrack)?.song ?: (it as? SearchResult.Track)?.song }
-                    if (match != null) vm.play(match, link.query) else com.opentune.data.Pills.error(com.opentune.i18n.Tr.f("Nothing found for \"{0}\"", link.query))
+                    // The song the request named, not just the first of the mixed search; autoplay
+                    // follows it with radio. A title and artist the Assistant sent decide it too.
+                    val songs = runCatching { MusicRepository.search(text, SearchFilter.ALL) }.getOrDefault(emptyList())
+                        .mapNotNull { (it as? SearchResult.TopTrack)?.song ?: (it as? SearchResult.Track)?.song }
+                    val match = bestVoiceMatch(songs, link.query, link.title, link.artist)
+                    if (match != null) vm.play(match, text) else com.opentune.data.Pills.error(com.opentune.i18n.Tr.f("Nothing found for \"{0}\"", text))
                 }
             }
             null -> return@LaunchedEffect

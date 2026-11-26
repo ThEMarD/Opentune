@@ -12,8 +12,11 @@ import kotlinx.coroutines.flow.asStateFlow
 sealed interface LinkTarget {
     data class Song(val videoId: String) : LinkTarget
     data class Browse(val browseId: String) : LinkTarget
-    /** "Play … on OpenTune" from the Assistant; blank means "play some music". */
-    data class PlaySearch(val query: String) : LinkTarget
+    /**
+     * "Play … on OpenTune" from the Assistant: the words it sent, and the title and artist it
+     * named when it sent those instead. A request that names nothing means "play some music".
+     */
+    data class PlaySearch(val query: String, val title: String? = null, val artist: String? = null) : LinkTarget
     /** A song on another service (Apple Music, Deezer, Tidal…), to find and play here. */
     data class Elsewhere(val url: String) : LinkTarget
     /** A Spotify playlist, album or song shared to the app, to bring over. */
@@ -79,11 +82,9 @@ object Links {
         }
         if (intent.action == MediaStore.INTENT_ACTION_MEDIA_PLAY_FROM_SEARCH) {
             _incoming.value = LinkTarget.PlaySearch(
-                playQuery(
-                    intent.getStringExtra(SearchManager.QUERY),
-                    intent.getStringExtra(MediaStore.EXTRA_MEDIA_TITLE),
-                    intent.getStringExtra(MediaStore.EXTRA_MEDIA_ARTIST),
-                ),
+                query = intent.getStringExtra(SearchManager.QUERY)?.trim().orEmpty(),
+                title = intent.getStringExtra(MediaStore.EXTRA_MEDIA_TITLE)?.trim()?.takeIf { it.isNotEmpty() },
+                artist = intent.getStringExtra(MediaStore.EXTRA_MEDIA_ARTIST)?.trim()?.takeIf { it.isNotEmpty() },
             )
             return
         }
@@ -120,4 +121,3 @@ object Links {
 internal fun playQuery(query: String?, title: String?, artist: String?): String =
     query?.trim()?.takeIf { it.isNotEmpty() }
         ?: listOfNotNull(title, artist).map { it.trim() }.filter { it.isNotEmpty() }.joinToString(" ")
-
