@@ -1,6 +1,8 @@
 *.iml
 .gradle
 /local.properties
+# The Android SDK this checkout builds with, when it isn't installed system-wide.
+/.android-sdk
 /.idea
 .DS_Store
 /build
