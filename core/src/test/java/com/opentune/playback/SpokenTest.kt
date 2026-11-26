@@ -91,6 +91,22 @@ class SpokenTest {
     }
 
     @Test
+    fun aSongRequestSearchesTitleAndArtistWithoutTheAlbum() = runBlocking {
+        // The album extra names the page the song is on; searching it too can lead a mixed
+        // search to that page instead of the song.
+        val request = SpokenRequest(title = "Money for Nothing", artist = "Dire Straits", album = "Brothers in Arms")
+        assertEquals("Money for Nothing Dire Straits", request.songText)
+        var searched: String? = null
+        val queued = spokenSongs(
+            request,
+            search = { text, _ -> searched = text; emptyList() },
+            songsOf = { _, _ -> emptyList() },
+        )
+        assertEquals("Money for Nothing Dire Straits", searched)
+        assertTrue(queued.isEmpty())
+    }
+
+    @Test
     fun aSongRequestStillPlaysTheSongItNames() = runBlocking {
         val money = Song("yelawolf", "Money (feat. Jelly Roll)", "Yelawolf", null)
         val dire = Song("dire", "Money for Nothing (Remastered 1996)", "Dire Straits", null)

@@ -29,10 +29,18 @@ data class SpokenRequest(
 ) {
     /** The words to search for: the query itself, or what the request named. */
     val text: String
-        get() = query.trim().ifEmpty {
-            listOfNotNull(title, album, artist).map { it.trim() }.filter { it.isNotEmpty() }.joinToString(" ")
-        }
+        get() = query.trim().ifEmpty { names(title, album, artist) }
+
+    /**
+     * The words a song search uses: the query, or just the title and artist. The album names the
+     * page the song is on, and joining it in can lead a mixed search to that page instead.
+     */
+    val songText: String
+        get() = query.trim().ifEmpty { names(title, artist) }
 }
+
+private fun names(vararg parts: String?): String =
+    parts.mapNotNull { it?.trim() }.filter { it.isNotEmpty() }.joinToString(" ")
 
 internal fun voiceFocus(focus: String?): VoiceFocus {
     val value = focus?.lowercase().orEmpty()
@@ -80,15 +88,20 @@ suspend fun spokenSongs(
     search: suspend (String, SearchFilter) -> List<SearchResult>,
     songsOf: suspend (BrowseType, String) -> List<Song>,
 ): List<Song> {
-    val text = request.text
+    return if (request.kind == VoiceFocus.SONG) song(request, search) else page(request, search, songsOf)
+}
+
+/** The song the request named. */
+private suspend fun song(
+    request: SpokenRequest,
+    search: suspend (String, SearchFilter) -> List<SearchResult>,
+): List<Song> {
+    val text = request.songText
     if (text.isEmpty()) return emptyList()
-    if (request.kind == VoiceFocus.SONG) {
-        // The song the request named, not simply YouTube's first: "money for nothing dire
-        // straits" leads with Yelawolf's "Money". Songs only if the mixed search has none.
-        val found = songsIn(search(text, SearchFilter.ALL)).ifEmpty { songsIn(search(text, SearchFilter.SONGS)) }
-        return listOfNotNull(bestVoiceMatch(found, request.query, request.title, request.artist))
-    }
-    return page(request, search, songsOf)
+    // Not simply YouTube's first: "money for nothing dire straits" leads with Yelawolf's
+    // "Money". Songs only if the mixed search has none.
+    val found = songsIn(search(text, SearchFilter.ALL)).ifEmpty { songsIn(search(text, SearchFilter.SONGS)) }
+    return listOfNotNull(bestVoiceMatch(found, request.query, request.title, request.artist))
 }
 
 /**
@@ -104,8 +117,10 @@ private suspend fun page(
     search: suspend (String, SearchFilter) -> List<SearchResult>,
     songsOf: suspend (BrowseType, String) -> List<Song>,
 ): List<Song> {
+    val text = request.text
+    if (text.isEmpty()) return emptyList()
     val album = request.kind == VoiceFocus.ALBUM
-    val rows = search(request.text, if (album) SearchFilter.ALBUMS else SearchFilter.ARTISTS)
+    val rows = search(text, if (album) SearchFilter.ALBUMS else SearchFilter.ARTISTS)
         .mapNotNull { (it as? SearchResult.Browse)?.item }
     // An album is named by its album extra, and its artist settles two of the same name; an
     // artist row's credit is its own name, so asking for it again would not tell any apart.
