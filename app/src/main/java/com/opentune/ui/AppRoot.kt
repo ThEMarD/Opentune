@@ -403,8 +403,11 @@ fun AppRoot(vm: PlayerViewModel) {
                 vm.player.connected.first { it }
                 val named = com.opentune.data.links.MusicLinks.resolve(link.url)
                 val match = named?.let { n ->
-                    runCatching { MusicRepository.search("${n.title} ${n.artist}".trim(), SearchFilter.SONGS) }.getOrDefault(emptyList())
-                        .firstNotNullOfOrNull { (it as? SearchResult.TopTrack)?.song ?: (it as? SearchResult.Track)?.song }
+                    // The song the link names, not simply YouTube's first result for it.
+                    val songs = runCatching { MusicRepository.search("${n.title} ${n.artist}".trim(), SearchFilter.SONGS) }
+                        .getOrDefault(emptyList())
+                        .mapNotNull { (it as? SearchResult.TopTrack)?.song ?: (it as? SearchResult.Track)?.song }
+                    bestVoiceMatch(songs, "", n.title, n.artist)
                 }
                 when {
                     match != null -> { vm.play(match, "Shared link"); playerOpen = true }
