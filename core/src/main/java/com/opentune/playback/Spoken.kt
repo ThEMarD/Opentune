@@ -52,9 +52,6 @@ private val WORD_HINTS = mapOf(
     "playlist" to VoiceFocus.PLAYLIST,
 )
 
-/** Words a spoken request opens with that name nothing in particular. */
-private val FILLER_WORDS = setOf("play", "the", "my", "some")
-
 /**
  * "play the album abbey road" searches "abbey road": the word naming the kind is not a name.
  * Only once such a word is there is the opening "play the" taken off as well, so a title that
@@ -142,17 +139,20 @@ private suspend fun song(
     // "Money". Songs only if the mixed search has none.
     val found = songsIn(search(text, SearchFilter.ALL)).ifEmpty { songsIn(search(text, SearchFilter.SONGS)) }
     val best = bestVoiceMatch(found, request.query, request.title, request.artist)
+    // The song the words name, and nothing more to look for.
+    if (best != null && requestNamesSong(best, request.query, request.title, request.artist)) return listOf(best)
     // "Play abbey road by the beatles" reaches a media app as a wildcard focus with only those
     // words, so it looks like a song request and the song that wins is a song off the album.
-    // When the song is not one the words name but an album's name is, the album was the request.
-    if (best == null || !requestNamesSong(best, request.query, request.title, request.artist)) {
-        val album = requestNamesAlbum(
-            search(text, SearchFilter.ALBUMS).mapNotNull { (it as? SearchResult.Browse)?.item },
-            request.query,
-            request.title,
-        )
-        if (album != null) return songsOf(BrowseType.ALBUM, album.browseId)
-    }
+    // When an album's name is what the words say, the album was the request instead. The lookup
+    // costs a second search, so a request that names only the artist keeps the song: an album
+    // shared their name and would otherwise take the whole page.
+    if (best != null && !requestCouldNameAnAlbum(best, request.query, request.title, request.artist)) return listOf(best)
+    val album = requestNamesAlbum(
+        search(text, SearchFilter.ALBUMS).mapNotNull { (it as? SearchResult.Browse)?.item },
+        request.query,
+        request.title,
+    )
+    if (album != null) return songsOf(BrowseType.ALBUM, album.browseId)
     return listOfNotNull(best)
 }
 

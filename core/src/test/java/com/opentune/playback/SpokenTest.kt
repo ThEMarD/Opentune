@@ -136,6 +136,26 @@ class SpokenTest {
     }
 
     @Test
+    fun anArtistNamePlaysTheSongAndSkipsTheAlbumLookup() = runBlocking {
+        // "Play the beatles" names the artist; an album is called that too (the 30-track White
+        // Album), and the album's page must not take the request. The album search is a second
+        // YouTube request, so it should not even be made.
+        val song = Song("ussr", "Back In The U.S.S.R. (Remastered 2009)", "The Beatles", null)
+        val white = BrowseItem("MPREb_white", "The Beatles", "The Beatles • 1968 • 30 songs", null, BrowseType.ALBUM)
+        val searched = mutableListOf<SearchFilter>()
+        val queued = spokenSongs(
+            SpokenRequest(query = "the beatles", kind = voiceFocus(WILDCARD_FOCUS, "the beatles")),
+            search = { _, filter ->
+                searched += filter
+                if (filter == SearchFilter.ALL) listOf(SearchResult.Track(song)) else listOf(SearchResult.Browse(white))
+            },
+            songsOf = { _, _ -> error("the album page must not be queued") },
+        )
+        assertEquals(listOf(song), queued)
+        assertEquals(listOf(SearchFilter.ALL), searched)
+    }
+
+    @Test
     fun theWordAlbumSearchesTheAlbumFilter() = runBlocking {
         val request = spokenRequest("play the album abbey road", null)
         assertEquals(VoiceFocus.ALBUM, request.kind)
@@ -205,11 +225,17 @@ class SpokenTest {
     fun aSongRequestStillPlaysTheSongItNames() = runBlocking {
         val money = Song("yelawolf", "Money (feat. Jelly Roll)", "Yelawolf", null)
         val dire = Song("dire", "Money for Nothing (Remastered 1996)", "Dire Straits", null)
+        val searched = mutableListOf<SearchFilter>()
         val queued = spokenSongs(
             SpokenRequest(query = "money for nothing dire straits"),
-            search = { _, _ -> listOf(SearchResult.Track(money), SearchResult.Track(dire)) },
+            search = { _, filter ->
+                searched += filter
+                listOf(SearchResult.Track(money), SearchResult.Track(dire))
+            },
             songsOf = { _, _ -> emptyList() },
         )
         assertEquals(listOf(dire), queued)
+        // The words name the song, so no album search is spent on it.
+        assertEquals(listOf(SearchFilter.ALL), searched)
     }
 }

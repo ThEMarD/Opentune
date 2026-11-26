@@ -23,6 +23,9 @@ fun bestVoiceMatch(songs: List<Song>, query: String, title: String?, artist: Str
 internal fun bestVoiceBrowse(items: List<BrowseItem>, query: String, title: String?, artist: String?): BrowseItem? =
     bestOf(items, query, title, artist, name = { titleKey(it.title) }, credit = { norm(InnertubeParser.artistFromSubtitle(it.subtitle)) })
 
+/** Words a spoken request opens with that name nothing in particular. */
+internal val FILLER_WORDS = setOf("play", "the", "my", "some")
+
 /** What the request said, as words: the name it sent, or the words it was given. */
 private fun asked(query: String, title: String?): List<String> =
     words(title?.let(::titleKey)?.takeIf { it.isNotEmpty() } ?: query)
@@ -38,6 +41,19 @@ internal fun requestNamesSong(song: Song, query: String, title: String?, artist:
         words(titleKey(song.title)),
         words(artist ?: song.artist),
     )
+
+/**
+ * Whether the words say more than the artist's name, so they could be naming an album that came
+ * back as no song at all. Looking for that album costs a second YouTube search, so it is only
+ * done when there is something left to look for: "play the beatles" names no album, even though
+ * a 30-track album is called that too.
+ */
+internal fun requestCouldNameAnAlbum(song: Song, query: String, title: String?, artist: String?): Boolean {
+    val wanted = asked(query, title)
+    if (wanted.isEmpty()) return false
+    val credit = words(artist ?: song.artist).toSet()
+    return wanted.any { it !in credit && it !in FILLER_WORDS }
+}
 
 /**
  * The album whose name, on its own or with its artist, is exactly what the request said: as an
