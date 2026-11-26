@@ -78,7 +78,13 @@ object Links {
             return
         }
         if (intent.action == MediaStore.INTENT_ACTION_MEDIA_PLAY_FROM_SEARCH) {
-            _incoming.value = LinkTarget.PlaySearch(intent.getStringExtra(SearchManager.QUERY).orEmpty())
+            _incoming.value = LinkTarget.PlaySearch(
+                playQuery(
+                    intent.getStringExtra(SearchManager.QUERY),
+                    intent.getStringExtra(MediaStore.EXTRA_MEDIA_TITLE),
+                    intent.getStringExtra(MediaStore.EXTRA_MEDIA_ARTIST),
+                ),
+            )
             return
         }
         val text = when (intent.action) {
@@ -105,3 +111,13 @@ object Links {
         _incoming.value = null
     }
 }
+
+/**
+ * The words to search for "play … on OpenTune". The Assistant usually sends the whole request
+ * as a query; when it sends only the parts it named (a title, an artist), those are put
+ * together so the song can still be found.
+ */
+internal fun playQuery(query: String?, title: String?, artist: String?): String =
+    query?.trim()?.takeIf { it.isNotEmpty() }
+        ?: listOfNotNull(title, artist).map { it.trim() }.filter { it.isNotEmpty() }.joinToString(" ")
+

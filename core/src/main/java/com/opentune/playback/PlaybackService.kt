@@ -862,9 +862,13 @@ class PlaybackService : MediaLibraryService() {
             mediaSession: MediaSession,
             controller: MediaSession.ControllerInfo,
             mediaItems: MutableList<MediaItem>,
-        ): ListenableFuture<MutableList<MediaItem>> = Futures.immediateFuture(
-            mediaItems.map(car::toQueueItem).toMutableList(),
-        )
+        ): ListenableFuture<MutableList<MediaItem>> = scope.future {
+            // A request from the Assistant can arrive as items to add: its item is a search, not
+            // a song, so it's resolved like one (the best match plays, autoplay carries on).
+            val spoken = mediaItems.singleOrNull()?.takeIf(car::isSpokenRequest)
+            if (spoken != null) car.resolve(listOf(spoken), 0, 0L).mediaItems.toMutableList()
+            else mediaItems.map(car::toQueueItem).toMutableList()
+        }
 
         override fun onSetMediaItems(
             mediaSession: MediaSession,
@@ -917,8 +921,14 @@ class PlaybackService : MediaLibraryService() {
             params: LibraryParams?,
         ): ListenableFuture<LibraryResult<Void>> = scope.future {
             val count = runCatching { car.search(query, browser).also { searchResults[query] = it }.size }
-                .onFailure { Log.w(TAG, "Search failed for ${browser.packageName}", it) }
+                .onFailure {
+                    if (it is CancellationException) throw it
+                    Log.w(TAG, "Search failed for ${browser.packageName}", it)
+                }
                 .getOrDefault(0)
+            // In logcat (debug builds), so a car's or the Assistant's search can be seen
+            // reaching the app, and what it came back with.
+            Log.d(TAG, "Search from ${browser.packageName}: \"$query\" -> $count result(s)")
             session.notifySearchResultChanged(browser, query, count, params)
             LibraryResult.ofVoid()
         }
@@ -931,7 +941,12 @@ class PlaybackService : MediaLibraryService() {
             pageSize: Int,
             params: LibraryParams?,
         ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> = scope.future {
-            val items = searchResults[query] ?: runCatching { car.search(query, browser) }.getOrDefault(emptyList())
+            val items = searchResults[query] ?: runCatching { car.search(query, browser) }
+                .onFailure {
+                    if (it is CancellationException) throw it
+                    Log.w(TAG, "Search failed for ${browser.packageName}", it)
+                }
+                .getOrDefault(emptyList())
             LibraryResult.ofItemList(items.page(page, pageSize), params)
         }
     }

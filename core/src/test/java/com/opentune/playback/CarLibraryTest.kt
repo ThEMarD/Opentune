@@ -82,4 +82,15 @@ class CarLibraryTest {
         val queue = car.resolve(listOf(spoken), 0, 0L)
         assertEquals(songs.map { it.videoId }.toSet(), queue.mediaItems.map { it.mediaId }.toSet())
     }
+
+    @Test
+    fun aSpokenRequestIsAQueryWhateverItsId() = runBlocking {
+        // As the Assistant sends it: a query in the metadata, and an id of the sender's own.
+        val spoken = MediaItem.Builder()
+            .setMediaId("androidx.media3.session.legacy")
+            .setRequestMetadata(MediaItem.RequestMetadata.Builder().setSearchQuery("").build())
+            .build()
+        val queue = car.resolve(listOf(spoken), 0, 0L)
+        assertEquals(songs.map { it.videoId }.toSet(), queue.mediaItems.map { it.mediaId }.toSet())
+    }
 }

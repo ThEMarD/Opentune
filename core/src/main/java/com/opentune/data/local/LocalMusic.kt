@@ -6,9 +6,14 @@ import android.annotation.SuppressLint
 import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore
+import androidx.annotation.VisibleForTesting
 import androidx.core.net.toUri
+import com.opentune.data.download.Downloads
+import com.opentune.data.library.LibraryStore
 import com.opentune.data.model.Song
+import com.opentune.data.settings.AppSettings
 import com.opentune.data.settings.LibrarySettings
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -35,6 +40,53 @@ object LocalMusic {
 
     suspend fun folders(context: Context): List<Pair<String, Int>> = withContext(Dispatchers.IO) {
         query(context).groupingBy { it.folder }.eachCount().toList().sortedBy { it.first.lowercase() }
+    }
+
+    /**
+     * Songs this device already has — liked, in the app's playlists, downloaded and in the
+     * Local Music folder — with every word of [q] in the title, artist or album: an exact title
+     * first, then titles starting with it, then the rest. What the app's Library search and the
+     * car's search both show.
+     */
+    suspend fun search(context: Context, q: String, limit: Int): List<Song> = withContext(Dispatchers.Default) {
+        val words = q.lowercase().split(Regex("\\s+")).filter { it.isNotEmpty() }
+        if (words.isEmpty()) return@withContext emptyList()
+        val text = q.lowercase()
+        val all = LibraryStore.liked.value.map { it.toSong() } +
+            LibraryStore.playlists.value.flatMap { playlist -> playlist.songs.map { it.toSong() } } +
+            Downloads.doneNow().map { it.song.toSong() } +
+            folderSongs(context)
+        all.distinctBy { it.videoId }
+            .filter { song -> "${song.title} ${song.artist} ${song.albumName.orEmpty()}".lowercase().let { hay -> words.all { it in hay } } }
+            .sortedBy { song ->
+                val title = song.title.lowercase()
+                when {
+                    title == text -> 0
+                    title.startsWith(text) -> 1
+                    text in title -> 2
+                    else -> 3
+                }
+            }
+            .take(limit)
+    }
+
+    /** The Local Music folder as the settings have it, read once; a changed folder reads afresh. */
+    private var folder: Pair<LibrarySettings, List<Song>>? = null
+
+    private suspend fun folderSongs(context: Context): List<Song> {
+        val settings = AppSettings.library.value
+        folder?.takeIf { it.first == settings }?.let { return it.second }
+        val songs = runCatching { tracks(context, settings) }
+            .onFailure { if (it is CancellationException) throw it }
+            .getOrNull() ?: return emptyList()
+        folder = settings to songs
+        return songs
+    }
+
+    /** Forgets the memoised folder scan, so tests read their own MediaStore rows. */
+    @VisibleForTesting
+    internal fun clearFolderCache() {
+        folder = null
     }
 
     /**

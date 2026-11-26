@@ -165,9 +165,11 @@ Everything OpenTune does, in detail. The short version is in the [README](../REA
   app.
 - **Android Auto.** Browse Home, Recent and Library (Liked, Downloads,
   playlists, radio stations) on the car screen, search by typing or voice ("play … on
-  OpenTune"), and tap a song to play its list from there. Sideloaded
-  builds show up in Android Auto once "Unknown sources" is turned on in
-  Android Auto's developer settings.
+  OpenTune"), and tap a song to play its list from there. Searches lead with
+  songs, and songs already on the device answer whether or not YouTube can be
+  reached. The car's assistant searches OpenTune the same way, and "play … on
+  OpenTune" works from it. Sideloaded builds show up in Android Auto once
+  "Unknown sources" is turned on in Android Auto's developer settings.
 - **Android TV.** A separate TV app (`tv/`) with Home, Explore, Library
   and Search, album and artist pages, and a Now Playing screen with synced
   lyrics, the queue and the format of what's playing. The remote moves a

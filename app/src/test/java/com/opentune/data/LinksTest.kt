@@ -2,6 +2,7 @@ package com.opentune.data
 
 import com.opentune.ui.LinkTarget
 import com.opentune.ui.Links
+import com.opentune.ui.playQuery
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -23,5 +24,14 @@ class LinksTest {
         assertNull(Links.parse("https://example.com/watch?v=dQw4w9WgXcQ"))
         assertNull(Links.parse("no link here"))
         assertNull(Links.parse("https://music.youtube.com/watch?v=<script>"))
+    }
+
+    @Test fun spokenRequests() {
+        // The Assistant's request as a query, with the spaces it pads…
+        assertEquals("blinding lights", playQuery("  blinding lights ", null, null))
+        // …or as the title and artist it named.
+        assertEquals("Blinding Lights The Weeknd", playQuery(null, "Blinding Lights", " The Weeknd "))
+        assertEquals("The Weeknd", playQuery("", null, "The Weeknd"))
+        assertEquals("", playQuery(null, null, null))
     }
 }

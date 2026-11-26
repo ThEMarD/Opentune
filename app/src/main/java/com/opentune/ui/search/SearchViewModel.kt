@@ -110,9 +110,6 @@ class SearchViewModel(application: android.app.Application) : androidx.lifecycle
     private val _addons = MutableStateFlow<UiState<List<AddonHit>>?>(null)
     val addons = _addons.asStateFlow()
 
-    /** The Local Music folder, read once a search first needs it. */
-    private var localSongs: List<com.opentune.data.model.Song>? = null
-
     private val _query = MutableStateFlow("")
     val query = _query.asStateFlow()
 
@@ -188,29 +185,8 @@ class SearchViewModel(application: android.app.Application) : androidx.lifecycle
     }
 
     /** Liked songs, your playlists, downloads and the Local Music folder, every word of [q] in the title, artist or album. */
-    private suspend fun searchLibrary(q: String): List<com.opentune.data.model.Song> = kotlinx.coroutines.withContext(Dispatchers.Default) {
-        val local = localSongs ?: runCatching {
-            com.opentune.data.local.LocalMusic.tracks(getApplication(), AppSettings.library.value)
-        }.getOrDefault(emptyList()).also { localSongs = it }
-        val store = com.opentune.data.library.LibraryStore
-        val all = store.liked.value.map { it.toSong() } +
-            store.playlists.value.flatMap { p -> p.songs.map { it.toSong() } } +
-            com.opentune.data.download.Downloads.doneNow().map { it.song.toSong() } + local
-        val words = q.lowercase().split(Regex("\\s+")).filter { it.isNotEmpty() }
-        val title = q.lowercase()
-        all.distinctBy { it.videoId }
-            .filter { s -> "${s.title} ${s.artist} ${s.albumName.orEmpty()}".lowercase().let { text -> words.all { it in text } } }
-            .sortedBy { s ->
-                val t = s.title.lowercase()
-                when {
-                    t == title -> 0
-                    t.startsWith(title) -> 1
-                    title in t -> 2
-                    else -> 3
-                }
-            }
-            .take(MAX_LIBRARY_ROWS)
-    }
+    private suspend fun searchLibrary(q: String): List<com.opentune.data.model.Song> =
+        com.opentune.data.local.LocalMusic.search(getApplication(), q, MAX_LIBRARY_ROWS)
 
     /** Every usable add-on at once; one that fails or is slow is left out rather than holding the rest. */
     private suspend fun searchAddons(q: String): UiState<List<AddonHit>> {
