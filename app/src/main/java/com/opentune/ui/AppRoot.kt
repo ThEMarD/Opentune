@@ -11,7 +11,9 @@ import com.opentune.ui.server.ServerArtistScreen
 import com.opentune.ui.server.ServerArtistsScreen
 import com.opentune.ui.server.ServerNav
 import com.opentune.ui.server.ServerPlaylistScreen
+import com.opentune.playback.VoiceFocus
 import com.opentune.playback.bestVoiceMatch
+import com.opentune.playback.spokenSongs
 import com.opentune.ui.server.ServerScreen
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.animation.EnterExitState
@@ -421,17 +423,27 @@ fun AppRoot(vm: PlayerViewModel) {
             is LinkTarget.Player -> playerOpen = true
             is LinkTarget.PlaySearch -> {
                 vm.player.connected.first { it }
-                val text = playQuery(link.query, link.title, link.artist)
+                val request = link.request
+                val text = request.text
                 if (text.isBlank()) {
                     val recent = com.opentune.data.history.History.recents(com.opentune.data.history.History.records.value, 50)
                     if (recent.isNotEmpty()) vm.playAll(recent, 0, true, "Recently played")
                 } else {
-                    // The song the request named, not just the first of the mixed search; autoplay
-                    // follows it with radio. A title and artist the Assistant sent decide it too.
-                    val songs = runCatching { MusicRepository.search(text, SearchFilter.ALL) }.getOrDefault(emptyList())
-                        .mapNotNull { (it as? SearchResult.TopTrack)?.song ?: (it as? SearchResult.Track)?.song }
-                    val match = bestVoiceMatch(songs, link.query, link.title, link.artist)
-                    if (match != null) vm.play(match, text) else com.opentune.data.Pills.error(com.opentune.i18n.Tr.f("Nothing found for \"{0}\"", text))
+                    // An album or an artist the request focused on queues that whole page; otherwise
+                    // the song it named, not just the first of the mixed search, with radio following it.
+                    val songs = runCatching {
+                        spokenSongs(request, MusicRepository::search) { type, id ->
+                            when (type) {
+                                BrowseType.ARTIST -> MusicRepository.artist(id).songs
+                                else -> MusicRepository.collection(id).songs
+                            }
+                        }
+                    }.getOrDefault(emptyList())
+                    when {
+                        songs.isEmpty() -> com.opentune.data.Pills.error(com.opentune.i18n.Tr.f("Nothing found for \"{0}\"", text))
+                        request.kind == VoiceFocus.SONG -> vm.play(songs.first(), text)
+                        else -> vm.playAll(songs, 0, false, text)
+                    }
                 }
             }
             null -> return@LaunchedEffect

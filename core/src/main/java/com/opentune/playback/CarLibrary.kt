@@ -5,7 +5,6 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
-import android.provider.MediaStore
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.util.UnstableApi
@@ -47,6 +46,13 @@ import java.util.concurrent.ConcurrentHashMap
 @UnstableApi
 class CarLibrary(
     private val context: Context,
+    /** An album's or an artist's songs, given as an argument so a test can answer without the network. */
+    private val browseSongs: suspend (BrowseType, String) -> List<Song> = { type, id ->
+        when (type) {
+            BrowseType.ARTIST -> MusicRepository.artist(id).songs
+            else -> MusicRepository.collection(id).songs
+        }
+    },
     /** YouTube search, given as an argument so a test can answer without the network. */
     private val remoteSearch: suspend (String, SearchFilter) -> List<SearchResult> = MusicRepository::search,
 ) {
@@ -113,7 +119,7 @@ class CarLibrary(
             .getOrDefault(emptyList())
         // Songs lead: Android Auto draws search results as one flat list, and a song plays where
         // a folder needs another tap. A song found on the device and on YouTube shows once.
-        val songs = (local + remote.mapNotNull(::songOf)).distinctBy { it.videoId }
+        val songs = (local + songsIn(remote)).distinctBy { it.videoId }
         listed[SEARCH] = songs
         val shown = (songs.map { song(SEARCH, it) } + remote.filterIsInstance<SearchResult.Browse>().map { result ->
             browseFolder(result.item.browseId, result.item.title, result.item.subtitle, result.item.thumbnailUrl, null)
@@ -167,46 +173,26 @@ class CarLibrary(
     fun isSpokenRequest(item: MediaItem): Boolean = item.requestMetadata.searchQuery != null
 
     private suspend fun voice(query: String, extras: Bundle?): MediaSession.MediaItemsWithStartPosition {
-        val text = spokenQuery(query, extras)
+        val request = spokenRequest(query, extras)
+        val text = request.text
         val songs = if (text.isBlank()) {
             // "Play music": what was played lately, or the liked songs.
             History.recents(History.records.value, MAX_SONGS).ifEmpty { LibraryStore.liked.value.map { it.toSong() } }.shuffled()
         } else {
-            // The song the request named, not simply YouTube's first: "money for nothing dire
-            // straits" leads with Yelawolf's "Money". Songs only if the mixed search has none.
-            val found = remoteSearch(text, SearchFilter.ALL).mapNotNull(::songOf)
-                .ifEmpty { remoteSearch(text, SearchFilter.SONGS).mapNotNull(::songOf) }
-            listOfNotNull(
-                bestVoiceMatch(
-                    found,
-                    query = query,
-                    title = extras?.getString(MediaStore.EXTRA_MEDIA_TITLE),
-                    artist = extras?.getString(MediaStore.EXTRA_MEDIA_ARTIST),
-                ),
-            )
+            // An album or an artist the request focused on queues that whole page; otherwise the
+            // song it named, not simply YouTube's first.
+            spokenSongs(request, remoteSearch, browseSongs)
         }
         // In logcat (debug builds), beside onSearch's line, so an Assistant request can be
         // told from a typed car search. Before the guard, so a request that finds nothing
         // still says what it asked for.
-        Log.d(TAG, "Assistant search \"$text\": ${songs.size} song(s)")
+        Log.d(TAG, "Assistant search \"$text\" (${request.kind.name.lowercase()}): ${songs.size} song(s)")
         // No match is no queue: handed over empty, it would end the song the car is playing
         // and leave it showing nothing. Failing the request reports that to the car instead,
         // and the session leaves the player untouched, so the queue that was there stays.
         // "Play music" with no history and no liked songs has nothing to play either.
         if (songs.isEmpty()) error(if (text.isBlank()) "Nothing to play" else "Nothing was found for \"$text\"")
         return MediaSession.MediaItemsWithStartPosition(songs.map { it.toMediaItem() }, 0, 0L)
-    }
-
-    /**
-     * The words to search for a spoken request: the query itself, or what the request named
-     * (its title and artist) when the words only say "play this".
-     */
-    private fun spokenQuery(query: String, extras: Bundle?): String {
-        val words = query.trim()
-        if (words.isNotEmpty() || extras == null) return words
-        val title = extras.getString(MediaStore.EXTRA_MEDIA_TITLE).orEmpty().trim()
-        val artist = extras.getString(MediaStore.EXTRA_MEDIA_ARTIST).orEmpty().trim()
-        return listOf(title, artist).filter { it.isNotEmpty() }.joinToString(" ")
     }
 
     private suspend fun homeItems(): List<MediaItem> {
@@ -352,12 +338,6 @@ class CarLibrary(
 
     private fun ShelfItem.toSongOrNull(): Song? = videoId?.takeIf { browseId == null }?.let {
         Song(videoId = it, title = title, artist = com.opentune.data.innertube.InnertubeParser.artistFromSubtitle(subtitle), thumbnailUrl = thumbnailUrl)
-    }
-
-    private fun songOf(result: SearchResult): Song? = when (result) {
-        is SearchResult.TopTrack -> result.song
-        is SearchResult.Track -> result.song
-        is SearchResult.Browse -> null
     }
 
     private fun split(mediaId: String): Pair<String, String>? {

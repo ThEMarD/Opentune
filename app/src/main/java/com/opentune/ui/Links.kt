@@ -3,6 +3,8 @@ package com.opentune.ui
 import android.app.SearchManager
 import android.content.Intent
 import android.provider.MediaStore
+import com.opentune.playback.SpokenRequest
+import com.opentune.playback.spokenRequest
 import java.net.URI
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -13,10 +15,11 @@ sealed interface LinkTarget {
     data class Song(val videoId: String) : LinkTarget
     data class Browse(val browseId: String) : LinkTarget
     /**
-     * "Play … on OpenTune" from the Assistant: the words it sent, and the title and artist it
-     * named when it sent those instead. A request that names nothing means "play some music".
+     * "Play … on OpenTune" from the Assistant: the words it sent, and the title, artist and album
+     * it named when it sent those instead, with the focus that says which of them it wants. A
+     * request that names nothing means "play some music".
      */
-    data class PlaySearch(val query: String, val title: String? = null, val artist: String? = null) : LinkTarget
+    data class PlaySearch(val request: SpokenRequest) : LinkTarget
     /** A song on another service (Apple Music, Deezer, Tidal…), to find and play here. */
     data class Elsewhere(val url: String) : LinkTarget
     /** A Spotify playlist, album or song shared to the app, to bring over. */
@@ -81,11 +84,7 @@ object Links {
             return
         }
         if (intent.action == MediaStore.INTENT_ACTION_MEDIA_PLAY_FROM_SEARCH) {
-            _incoming.value = LinkTarget.PlaySearch(
-                query = intent.getStringExtra(SearchManager.QUERY)?.trim().orEmpty(),
-                title = intent.getStringExtra(MediaStore.EXTRA_MEDIA_TITLE)?.trim()?.takeIf { it.isNotEmpty() },
-                artist = intent.getStringExtra(MediaStore.EXTRA_MEDIA_ARTIST)?.trim()?.takeIf { it.isNotEmpty() },
-            )
+            _incoming.value = LinkTarget.PlaySearch(spokenRequest(intent.getStringExtra(SearchManager.QUERY), intent.extras))
             return
         }
         val text = when (intent.action) {
@@ -112,12 +111,3 @@ object Links {
         _incoming.value = null
     }
 }
-
-/**
- * The words to search for "play … on OpenTune". The Assistant usually sends the whole request
- * as a query; when it sends only the parts it named (a title, an artist), those are put
- * together so the song can still be found.
- */
-internal fun playQuery(query: String?, title: String?, artist: String?): String =
-    query?.trim()?.takeIf { it.isNotEmpty() }
-        ?: listOfNotNull(title, artist).map { it.trim() }.filter { it.isNotEmpty() }.joinToString(" ")

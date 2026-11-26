@@ -9,6 +9,8 @@ import androidx.media3.common.util.UnstableApi
 import androidx.test.core.app.ApplicationProvider
 import com.opentune.data.history.History
 import com.opentune.data.library.LibraryStore
+import com.opentune.data.model.BrowseItem
+import com.opentune.data.model.BrowseType
 import com.opentune.data.model.SearchFilter
 import com.opentune.data.model.SearchResult
 import com.opentune.data.model.Song
@@ -157,8 +159,55 @@ class CarLibraryTest {
         assertEquals(listOf(song.videoId), queue.mediaItems.map { it.mediaId })
     }
 
-    /** A spoken request as the Assistant sends it, with the title and artist it named if any. */
-    private fun spokenItem(query: String, title: String? = null, artist: String? = null): MediaItem = MediaItem.Builder()
+    @Test
+    fun anAlbumRequestQueuesTheAlbumNotOneOfItsSongs() = runBlocking {
+        val album = BrowseItem("MPREb_abbey", "Abbey Road", "The Beatles • 1969 • 17 songs", null, BrowseType.ALBUM)
+        val other = BrowseItem("MPREb_let", "Let It Be", "The Beatles • 1970 • 12 songs", null, BrowseType.ALBUM)
+        val tracks = listOf(
+            Song("abbey1", "Come Together", "The Beatles", null),
+            Song("abbey2", "Something", "The Beatles", null),
+        )
+        // YouTube leads with another album of the same artist; the request named this one.
+        val albumCar = CarLibrary(
+            context,
+            browseSongs = { type, id -> if (type == BrowseType.ALBUM && id == album.browseId) tracks else emptyList() },
+            remoteSearch = { _, filter ->
+                if (filter == SearchFilter.ALBUMS) listOf(SearchResult.Browse(other), SearchResult.Browse(album))
+                else listOf(SearchResult.Track(tracks.first()))
+            },
+        )
+        val spoken = spokenItem("", album = "Abbey Road", artist = "The Beatles", focus = FOCUS_ALBUM)
+        val queue = albumCar.resolve(listOf(spoken), 0, 0L)
+        assertEquals(tracks.map { it.videoId }, queue.mediaItems.map { it.mediaId })
+    }
+
+    @Test
+    fun anArtistRequestQueuesTheArtistsSongs() = runBlocking {
+        val artist = BrowseItem("UCbeatles", "The Beatles", "Artist", null, BrowseType.ARTIST)
+        val tracks = listOf(
+            Song("help1", "Help!", "The Beatles", null),
+            Song("yesterday1", "Yesterday", "The Beatles", null),
+        )
+        val artistCar = CarLibrary(
+            context,
+            browseSongs = { type, id -> if (type == BrowseType.ARTIST && id == artist.browseId) tracks else emptyList() },
+            remoteSearch = { _, filter ->
+                if (filter == SearchFilter.ARTISTS) listOf(SearchResult.Browse(artist))
+                else listOf(SearchResult.Track(tracks.first()))
+            },
+        )
+        val queue = artistCar.resolve(listOf(spokenItem("", artist = "The Beatles", focus = FOCUS_ARTIST)), 0, 0L)
+        assertEquals(tracks.map { it.videoId }, queue.mediaItems.map { it.mediaId })
+    }
+
+    /** A spoken request as the Assistant sends it, with the names and focus it sent if any. */
+    private fun spokenItem(
+        query: String,
+        title: String? = null,
+        artist: String? = null,
+        album: String? = null,
+        focus: String? = null,
+    ): MediaItem = MediaItem.Builder()
         .setMediaId("androidx.media3.session.legacy")
         .setRequestMetadata(
             MediaItem.RequestMetadata.Builder()
@@ -167,6 +216,8 @@ class CarLibraryTest {
                     Bundle().apply {
                         title?.let { putString(MediaStore.EXTRA_MEDIA_TITLE, it) }
                         artist?.let { putString(MediaStore.EXTRA_MEDIA_ARTIST, it) }
+                        album?.let { putString(MediaStore.EXTRA_MEDIA_ALBUM, it) }
+                        focus?.let { putString(MediaStore.EXTRA_MEDIA_FOCUS, it) }
                     },
                 )
                 .build(),
