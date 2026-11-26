@@ -200,6 +200,48 @@ class CarLibraryTest {
         assertEquals(tracks.map { it.videoId }, queue.mediaItems.map { it.mediaId })
     }
 
+    @Test
+    fun searchOffersTheAppsFiltersWithoutVideos() = runBlocking {
+        val searchCar = CarLibrary(context) { _, _ -> emptyList() }
+        val results = searchCar.search("abbey road", null)
+        val folders = results.filter { it.mediaMetadata.isBrowsable == true }
+        assertEquals(
+            listOf(SearchFilter.SONGS, SearchFilter.ALBUMS, SearchFilter.ARTISTS, SearchFilter.PLAYLISTS).map { it.label },
+            folders.map { it.mediaMetadata.title.toString() },
+        )
+        assertTrue(folders.none { it.mediaMetadata.title.toString() == SearchFilter.VIDEOS.label })
+    }
+
+    @Test
+    fun theAlbumsFilterListsTheAlbumsItFinds() = runBlocking {
+        val album = BrowseItem("MPREb_abbey", "Abbey Road", "The Beatles", null, BrowseType.ALBUM)
+        val searchCar = CarLibrary(
+            context,
+            remoteSearch = { _, filter -> if (filter == SearchFilter.ALBUMS) listOf(SearchResult.Browse(album)) else emptyList() },
+        )
+        val folders = searchCar.search("abbey road", null)
+        val albums = folders.first { it.mediaMetadata.title.toString() == SearchFilter.ALBUMS.label }
+        val listed = searchCar.children(albums.mediaId, null)
+        assertEquals(listOf("collection:${album.browseId}"), listed.map { it.mediaId })
+        assertEquals(MediaMetadata.MEDIA_TYPE_ALBUM, listed.single().mediaMetadata.mediaType)
+    }
+
+    @Test
+    fun theSongsFilterListsTheSongsAndQueuesThem() = runBlocking {
+        val track = Song("abbey1", "Come Together", "The Beatles", null)
+        val searchCar = CarLibrary(
+            context,
+            remoteSearch = { _, filter -> if (filter == SearchFilter.SONGS) listOf(SearchResult.Track(track)) else emptyList() },
+        )
+        val folders = searchCar.search("come together", null)
+        val songsFolder = folders.first { it.mediaMetadata.title.toString() == SearchFilter.SONGS.label }
+        val listed = searchCar.children(songsFolder.mediaId, null)
+        assertEquals(listOf("${songsFolder.mediaId}|${track.videoId}"), listed.map { it.mediaId })
+        // Tapping a song in a filter's page queues that page, as anywhere else in the car.
+        val queue = searchCar.resolve(listOf(listed.single()), 0, 0L)
+        assertEquals(listOf(track.videoId), queue.mediaItems.map { it.mediaId })
+    }
+
     /** A spoken request as the Assistant sends it, with the names and focus it sent if any. */
     private fun spokenItem(
         query: String,

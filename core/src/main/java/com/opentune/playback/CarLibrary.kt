@@ -91,6 +91,7 @@ class CarLibrary(
             parentId.startsWith(COLLECTION) ->
                 songs(parentId, MusicRepository.collection(parentId.removePrefix(COLLECTION)).songs)
             parentId.startsWith(ARTIST) -> artistItems(parentId)
+            parentId.startsWith(SEARCH_FILTER) -> filterResults(parentId)
             parentId == SERVER -> serverItems()
             parentId.startsWith(SERVER_ALBUM) -> songs(parentId, Subsonic.album(parentId.removePrefix(SERVER_ALBUM)).second)
             parentId.startsWith(SERVER_PLAYLIST) -> songs(parentId, Subsonic.playlist(parentId.removePrefix(SERVER_PLAYLIST)).second)
@@ -100,7 +101,7 @@ class CarLibrary(
         return items
     }
 
-    suspend fun search(query: String, browser: MediaSession.ControllerInfo): List<MediaItem> {
+    suspend fun search(query: String, browser: MediaSession.ControllerInfo?): List<MediaItem> {
         val text = query.trim()
         if (text.isEmpty()) return emptyList()
         // What this device already has answers at once, so the car's list has something to play
@@ -116,9 +117,12 @@ class CarLibrary(
         // a folder needs another tap. A song found on the device and on YouTube shows once.
         val songs = (local + songsIn(remote)).distinctBy { it.videoId }
         listed[SEARCH] = songs
-        val shown = (songs.map { song(SEARCH, it) } + remote.filterIsInstance<SearchResult.Browse>().map { result ->
-            browseFolder(result.item.browseId, result.item.title, result.item.subtitle, result.item.thumbnailUrl, null)
-        }).take(MAX_SONGS)
+        // The app's filters head the results as pages of their own: the car draws a search as one
+        // flat list with no room for tabs, so a folder is how it can narrow one down.
+        val shown = (CAR_FILTERS.map { filter -> filterFolder(filter, text) } +
+            songs.map { song(SEARCH, it) } + remote.filterIsInstance<SearchResult.Browse>().map { result ->
+                browseFolder(result.item.browseId, result.item.title, result.item.subtitle, result.item.thumbnailUrl, null)
+            }).take(MAX_SONGS)
         grantArtwork(shown, browser)
         return shown
     }
@@ -180,8 +184,10 @@ class CarLibrary(
         }
         // In logcat (debug builds), beside onSearch's line, so an Assistant request can be
         // told from a typed car search. Before the guard, so a request that finds nothing
-        // still says what it asked for.
+        // still says what it asked for. What the Assistant sent beyond the query is logged
+        // too: the focus it chose decides whether an album or an artist page is queued.
         Log.d(TAG, "Assistant search \"$text\" (${request.kind.name.lowercase()}): ${songs.size} song(s)")
+        Log.d(TAG, "Assistant search extras: ${extras?.texts() ?: "none"}")
         // No match is no queue: handed over empty, it would end the song the car is playing
         // and leave it showing nothing. Failing the request reports that to the car instead,
         // and the session leaves the player untouched, so the queue that was there stays.
@@ -189,6 +195,52 @@ class CarLibrary(
         if (songs.isEmpty()) error(if (text.isBlank()) "Nothing to play" else "Nothing was found for \"$text\"")
         return MediaSession.MediaItemsWithStartPosition(songs.map { it.toMediaItem() }, 0, 0L)
     }
+
+    /**
+     * One filter's results: songs for the Songs filter (this device's matches first), the
+     * albums, artists or playlists YouTube found for the rest. The query travels in the id, so
+     * a later search cannot make an older list answer for the newer words.
+     */
+    private suspend fun filterResults(parentId: String): List<MediaItem> {
+        val (filter, text) = splitFilterId(parentId) ?: return emptyList()
+        val found = runCatching { remoteSearch(text, filter) }
+            .onFailure {
+                if (it is CancellationException) throw it
+                Log.w(TAG, "Search for \"$text\" (${filter.label}) failed", it)
+            }
+            .getOrDefault(emptyList())
+        if (filter == SearchFilter.SONGS) {
+            val local = LocalMusic.search(context, text, MAX_LOCAL)
+            // A song found on the device and on YouTube shows once, as in the unfiltered list.
+            return songs(parentId, (local + songsIn(found)).distinctBy { it.videoId })
+        }
+        return found.filterIsInstance<SearchResult.Browse>().map { result ->
+            browseFolder(result.item.browseId, result.item.title, result.item.subtitle, result.item.thumbnailUrl, null)
+        }.take(MAX_SONGS)
+    }
+
+    /** One of the app's filters, as its own page under the query that opened it. */
+    private fun filterFolder(filter: SearchFilter, query: String): MediaItem =
+        folder(
+            filterId(filter, query),
+            filter.label,
+            subtitle = query,
+            browsableStyle = MediaConstants.EXTRAS_VALUE_CONTENT_STYLE_LIST_ITEM,
+        )
+
+    private fun filterId(filter: SearchFilter, query: String) = "$SEARCH_FILTER${filter.name}:$query"
+
+    private fun splitFilterId(parentId: String): Pair<SearchFilter, String>? {
+        val parts = parentId.removePrefix(SEARCH_FILTER).split(':', limit = 2)
+        val name = parts.getOrNull(0) ?: return null
+        val filter = SearchFilter.entries.firstOrNull { it.name == name } ?: return null
+        return filter to (parts.getOrNull(1) ?: return null)
+    }
+
+    /** What a request carried besides its query, as text: the focus, and any names it added. */
+    private fun Bundle.texts(): String = keySet().sorted().mapNotNull { key ->
+        getCharSequence(key)?.let { "$key=$it" }
+    }.joinToString().ifEmpty { "none" }
 
     private suspend fun homeItems(): List<MediaItem> {
         val now = System.currentTimeMillis()
@@ -349,6 +401,9 @@ class CarLibrary(
         const val LIKED = "liked"
         const val DOWNLOADS = "downloads"
         const val SEARCH = "search"
+        private const val SEARCH_FILTER = "search-filter:"
+        /** The app's search filters the car offers. Videos is left out: watching video while driving is a distraction. */
+        private val CAR_FILTERS = listOf(SearchFilter.SONGS, SearchFilter.ALBUMS, SearchFilter.ARTISTS, SearchFilter.PLAYLISTS)
         private const val HOME_SHELF = "home:"
         private const val PLAYLIST = "playlist:"
         private const val COLLECTION = "collection:"
