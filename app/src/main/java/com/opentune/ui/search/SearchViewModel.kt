@@ -3,6 +3,7 @@ package com.opentune.ui.search
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.opentune.data.MusicRepository
+import com.opentune.data.local.LocalMusic
 import com.opentune.data.model.SearchFilter
 import com.opentune.data.model.SearchResult
 import com.opentune.data.model.durationMillis
@@ -150,7 +151,7 @@ class SearchViewModel(application: android.app.Application) : androidx.lifecycle
                 when {
                     src == SearchSource.LIBRARY -> {
                         _libraryLists.value = if (q.isEmpty()) emptyList() else searchLists(q)
-                        _library.value = if (q.isEmpty()) null else searchLibrary(q)
+                        _library.value = if (q.isEmpty()) null else LocalMusic.search(getApplication(), q, MAX_LIBRARY_ROWS)
                     }
                     src == SearchSource.ADDONS && q.isEmpty() -> _addons.value = null
                     src == SearchSource.ADDONS -> {
@@ -183,10 +184,6 @@ class SearchViewModel(application: android.app.Application) : androidx.lifecycle
         val start = q.lowercase().trim()
         return (own + saved).sortedBy { if (it.title.lowercase().startsWith(start)) 0 else 1 }.take(MAX_LIBRARY_LISTS)
     }
-
-    /** Liked songs, your playlists, downloads and the Local Music folder, every word of [q] in the title, artist or album. */
-    private suspend fun searchLibrary(q: String): List<com.opentune.data.model.Song> =
-        com.opentune.data.local.LocalMusic.search(getApplication(), q, MAX_LIBRARY_ROWS)
 
     /** Every usable add-on at once; one that fails or is slow is left out rather than holding the rest. */
     private suspend fun searchAddons(q: String): UiState<List<AddonHit>> {

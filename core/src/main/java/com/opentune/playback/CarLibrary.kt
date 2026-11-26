@@ -111,10 +111,9 @@ class CarLibrary(private val context: Context) {
         // a folder needs another tap. A song found on the device and on YouTube shows once.
         val songs = (local + remote.mapNotNull(::songOf)).distinctBy { it.videoId }
         listed[SEARCH] = songs
-        val items = songs.map { song(SEARCH, it) } + remote.filterIsInstance<SearchResult.Browse>().map { result ->
+        val shown = (songs.map { song(SEARCH, it) } + remote.filterIsInstance<SearchResult.Browse>().map { result ->
             browseFolder(result.item.browseId, result.item.title, result.item.subtitle, result.item.thumbnailUrl, null)
-        }
-        val shown = items.take(MAX_SONGS)
+        }).take(MAX_SONGS)
         grantArtwork(shown, browser)
         return shown
     }
@@ -127,9 +126,7 @@ class CarLibrary(private val context: Context) {
     suspend fun resolve(items: List<MediaItem>, startIndex: Int, startPositionMs: Long): MediaSession.MediaItemsWithStartPosition {
         val single = items.singleOrNull()
         if (single != null) {
-            // A spoken request ("play … on OpenTune" from the Assistant, or Android Auto's voice
-            // search) carries a query rather than a song, sometimes with a placeholder id of its
-            // own, so the query is what says it's one.
+            // Android Auto's voice search arrives this way too, often with a placeholder id.
             if (isSpokenRequest(single)) {
                 return voice(single.requestMetadata.searchQuery?.toString().orEmpty(), single.requestMetadata.extras)
             }
