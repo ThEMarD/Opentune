@@ -1,0 +1,83 @@
+# Fork CI: just the Android signal — both unit test suites and the debug APK.
+#
+# The inherited ci.yml also triggers on every push, but several of its jobs
+# need upstream secrets, services and release keystores that a fork doesn't
+# have, so its result says more about the missing infrastructure than about
+# the change. This workflow is the check that matters here: :core and :app
+# tests and assembleDebug, nothing else.
+name: Android tests
+
+on:
+  push:
+    branches: [main]
+  # So it can be started from the Actions tab once, without pushing a commit.
+  workflow_dispatch:
+
+concurrency:
+  group: android-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      # compileSdk 37 (InnerTubeX's AAR is built against it) and the build
+      # tools. The packages are named because the action's default list
+      # includes "tools", which the current SDK manager no longer has.
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools platforms;android-37.0 build-tools;36.0.0 ndk;27.2.12479018 cmake;3.22.1
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Unit tests and debug APK
+        run: ./gradlew --no-daemon :core:testDebugUnitTest :app:testDebugUnitTest assembleDebug
+
+      # Same totals as ci.yml prints, so a red run names the failing tests in
+      # the log instead of only in an artifact.
+      - name: Report test totals
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import glob, xml.etree.ElementTree as ET
+          totals = dict(tests=0, failures=0, errors=0, skipped=0)
+          for path in glob.glob('*/build/test-results/testDebugUnitTest/TEST-*.xml'):
+              suite = ET.parse(path).getroot()
+              for key in totals:
+                  totals[key] += int(suite.get(key, 0))
+              for case in suite.iter('testcase'):
+                  for failure in list(case.findall('failure')) + list(case.findall('error')):
+                      print(f"{case.get('classname')}.{case.get('name')}: {failure.get('message')}")
+                      print((failure.text or '')[:3000])
+          print('Android test totals:', totals)
+          PY
+
+      - name: Test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-test-reports
+          path: |
+            core/build/reports/
+            core/build/test-results/
+            app/build/reports/
+            app/build/test-results/
+          if-no-files-found: ignore
+
+      - name: Debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-apk
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: ignore
