@@ -45,7 +45,11 @@ import java.util.concurrent.ConcurrentHashMap
  * into the plain queue items the rest of the app uses.
  */
 @UnstableApi
-class CarLibrary(private val context: Context) {
+class CarLibrary(
+    private val context: Context,
+    /** YouTube search, given as an argument so a test can answer without the network. */
+    private val remoteSearch: suspend (String, SearchFilter) -> List<SearchResult> = MusicRepository::search,
+) {
     /** The songs last listed under each node, for queueing a tapped song's list. */
     private val listed = ConcurrentHashMap<String, List<Song>>()
 
@@ -101,7 +105,7 @@ class CarLibrary(private val context: Context) {
         // What this device already has answers at once, so the car's list has something to play
         // even while YouTube is being asked, or when it can't be reached.
         val local = LocalMusic.search(context, text, MAX_LOCAL)
-        val remote = runCatching { MusicRepository.search(text, SearchFilter.ALL) }
+        val remote = runCatching { remoteSearch(text, SearchFilter.ALL) }
             .onFailure {
                 if (it is CancellationException) throw it
                 Log.w(TAG, "Search for \"$text\" failed", it)
@@ -169,12 +173,18 @@ class CarLibrary(private val context: Context) {
             History.recents(History.records.value, MAX_SONGS).ifEmpty { LibraryStore.liked.value.map { it.toSong() } }.shuffled()
         } else {
             // The mixed search leads with YouTube's best match; songs only if it has none.
-            MusicRepository.search(text, SearchFilter.ALL).firstNotNullOfOrNull(::songOf)?.let(::listOf)
-                ?: MusicRepository.search(text, SearchFilter.SONGS).mapNotNull(::songOf).take(1)
+            remoteSearch(text, SearchFilter.ALL).firstNotNullOfOrNull(::songOf)?.let(::listOf)
+                ?: remoteSearch(text, SearchFilter.SONGS).mapNotNull(::songOf).take(1)
         }
         // In logcat (debug builds), beside onSearch's line, so an Assistant request can be
-        // told from a typed car search.
+        // told from a typed car search. Before the guard, so a request that finds nothing
+        // still says what it asked for.
         Log.d(TAG, "Assistant search \"$text\": ${songs.size} song(s)")
+        // No match is no queue: handed over empty, it would end the song the car is playing
+        // and leave it showing nothing. Failing the request reports that to the car instead,
+        // and the session leaves the player untouched, so the queue that was there stays.
+        // "Play music" with no history and no liked songs has nothing to play either.
+        if (songs.isEmpty()) error(if (text.isBlank()) "Nothing to play" else "Nothing was found for \"$text\"")
         return MediaSession.MediaItemsWithStartPosition(songs.map { it.toMediaItem() }, 0, 0L)
     }
 

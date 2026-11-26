@@ -5,6 +5,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.util.UnstableApi
 import androidx.test.core.app.ApplicationProvider
+import com.opentune.data.history.History
 import com.opentune.data.library.LibraryStore
 import com.opentune.data.model.Song
 import kotlinx.coroutines.runBlocking
@@ -81,6 +82,35 @@ class CarLibraryTest {
             .build()
         val queue = car.resolve(listOf(spoken), 0, 0L)
         assertEquals(songs.map { it.videoId }.toSet(), queue.mediaItems.map { it.mediaId }.toSet())
+    }
+
+    @Test
+    fun aSpokenRequestThatFindsNothingFailsTheRequest() = runBlocking {
+        // YouTube answers even nonsense with a result, so the no-match is played here:
+        // a search that comes back empty, as it does when the account has nothing for it.
+        val emptyCar = CarLibrary(context) { _, _ -> emptyList() }
+        val spoken = MediaItem.Builder()
+            .setMediaId("androidx.media3.session.legacy")
+            .setRequestMetadata(MediaItem.RequestMetadata.Builder().setSearchQuery("zzzz not a song").build())
+            .build()
+        // The session fails the request on an exception and never changes the player, so the
+        // car hears that nothing was found rather than being handed an empty queue.
+        val failed = runCatching { emptyCar.resolve(listOf(spoken), 0, 0L) }
+        assertTrue(failed.exceptionOrNull() is IllegalStateException)
+    }
+
+    @Test
+    fun blankVoiceRequestWithNothingToPlayFailsTheRequest() = runBlocking {
+        // "Play music" falls back on history, then liked songs; with neither there is no queue,
+        // and an empty one would clear what the car is playing just as a no-match search would.
+        songs.forEach { LibraryStore.setLiked(it, false) }
+        History.clear()
+        val spoken = MediaItem.Builder()
+            .setMediaId("androidx.media3.session.legacy")
+            .setRequestMetadata(MediaItem.RequestMetadata.Builder().setSearchQuery("").build())
+            .build()
+        val failed = runCatching { car.resolve(listOf(spoken), 0, 0L) }
+        assertTrue(failed.exceptionOrNull() is IllegalStateException)
     }
 
     @Test
