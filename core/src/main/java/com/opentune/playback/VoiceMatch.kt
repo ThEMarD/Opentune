@@ -1,7 +1,5 @@
 package com.opentune.playback
 
-import com.opentune.data.innertube.InnertubeParser
-import com.opentune.data.model.BrowseItem
 import com.opentune.data.model.Song
 
 /**
@@ -10,91 +8,21 @@ import com.opentune.data.model.Song
  * request only sends its words, how much of them a result's title and artist account for
  * decides. "Play money for nothing dire straits" leads with Yelawolf's "Money", which names one
  * of those five words, where Dire Straits' "Money for Nothing" names all of them.
+ *
+ * The song the request names most wins; YouTube's first is the answer when nothing it said is in
+ * any of the results.
  */
-fun bestVoiceMatch(songs: List<Song>, query: String, title: String?, artist: String?): Song? =
-    bestOf(songs, query, title, artist, name = { titleKey(it.title) }, credit = { norm(it.artist) })
-
-/**
- * The album or artist a spoken "play …" request named, out of that filter's search results: the
- * name it sent counts most, then its artist, and the request's own words account for the rest.
- * An album row reads "Album • The Beatles • 1969", so the credit is what follows the kind word:
- * every "Abbey Road" would otherwise tie on its artist and the first one listed would win.
- */
-internal fun bestVoiceBrowse(items: List<BrowseItem>, query: String, title: String?, artist: String?): BrowseItem? =
-    bestOf(items, query, title, artist, name = { titleKey(it.title) }, credit = { norm(InnertubeParser.artistFromSubtitle(it.subtitle)) })
-
-/** Words a spoken request opens with that name nothing in particular. */
-internal val FILLER_WORDS = setOf("play", "the", "my", "some")
-
-/** What the request said, as words: the name it sent, or the words it was given. */
-private fun asked(query: String, title: String?): List<String> =
-    words(title?.let(::titleKey)?.takeIf { it.isNotEmpty() } ?: query)
-
-/**
- * Whether [song] is exactly what the request said, by its name or by its name and its artist.
- * "Money for nothing dire straits" is Dire Straits' "Money for Nothing" and nothing else is,
- * which is how a song outranks an album of the same name.
- */
-internal fun requestNamesSong(song: Song, query: String, title: String?, artist: String?): Boolean =
-    says(
-        asked(query, title),
-        words(titleKey(song.title)),
-        words(artist ?: song.artist),
-    )
-
-/**
- * Whether the words say more than the artist's name, so they could be naming an album that came
- * back as no song at all. Looking for that album costs a second YouTube search, so it is only
- * done when there is something left to look for: "play the beatles" names no album, even though
- * a 30-track album is called that too.
- */
-internal fun requestCouldNameAnAlbum(song: Song, query: String, title: String?, artist: String?): Boolean {
-    val wanted = asked(query, title)
-    if (wanted.isEmpty()) return false
-    val credit = words(artist ?: song.artist).toSet()
-    return wanted.any { it !in credit && it !in FILLER_WORDS }
-}
-
-/**
- * The album whose name, on its own or with its artist, is exactly what the request said: as an
- * album row reads "Abbey Road" over "The Beatles • 1969 • 17 songs", "abbey road the beatles"
- * names it and "abbey road" alone does too.
- */
-internal fun requestNamesAlbum(items: List<BrowseItem>, query: String, title: String?): BrowseItem? {
-    val wanted = asked(query, title)
-    if (wanted.isEmpty()) return null
-    return items.firstOrNull { item ->
-        says(
-            wanted,
-            words(titleKey(item.title)),
-            words(InnertubeParser.artistFromSubtitle(item.subtitle)),
-        )
-    }
-}
-
-/** Whether [wanted] is the [name] alone, or the name with its [credit], either way round. */
-private fun says(wanted: List<String>, name: List<String>, credit: List<String>): Boolean =
-    wanted.isNotEmpty() && (wanted == name || wanted == name + credit || wanted == credit + name)
-
-/** The item the request names most; the first one when nothing it said is in any of them. */
-private fun <T> bestOf(
-    items: List<T>,
-    query: String,
-    title: String?,
-    artist: String?,
-    name: (T) -> String,
-    credit: (T) -> String,
-): T? {
+fun bestVoiceMatch(songs: List<Song>, query: String, title: String?, artist: String?): Song? {
     val wantedTitle = title?.let(::titleKey)?.takeIf { it.isNotEmpty() }
     val wantedArtist = artist?.let(::norm)?.takeIf { it.isNotEmpty() }
     val asked = words(query)
-    fun score(item: T): Double =
-        (wantedTitle?.let { 3 * overlap(it, name(item)) } ?: 0.0) +
-            (wantedArtist?.let { 2 * overlap(it, credit(item)) } ?: 0.0) +
-            if (asked.isEmpty()) 0.0 else 2 * coverage(asked, "${name(item)} ${credit(item)}")
-    val best = items.maxByOrNull { score(it) }
+    fun score(song: Song): Double =
+        (wantedTitle?.let { 3 * overlap(it, titleKey(song.title)) } ?: 0.0) +
+            (wantedArtist?.let { 2 * overlap(it, norm(song.artist)) } ?: 0.0) +
+            if (asked.isEmpty()) 0.0 else 2 * coverage(asked, "${titleKey(song.title)} ${norm(song.artist)}")
+    val best = songs.maxByOrNull { score(it) }
     // Nothing the request said shows up in the results: YouTube's own order is the best guess left.
-    return best?.takeIf { score(it) > 0 } ?: items.firstOrNull()
+    return best?.takeIf { score(it) > 0 } ?: songs.firstOrNull()
 }
 
 /** A title without its bracketed extras ("(Remastered 1996)", "[Live]") or its " - " suffix. */

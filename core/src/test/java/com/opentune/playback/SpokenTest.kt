@@ -2,8 +2,6 @@ package com.opentune.playback
 
 import android.os.Bundle
 import android.provider.MediaStore
-import com.opentune.data.model.BrowseItem
-import com.opentune.data.model.BrowseType
 import com.opentune.data.model.SearchFilter
 import com.opentune.data.model.SearchResult
 import com.opentune.data.model.Song
@@ -18,211 +16,32 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
 class SpokenTest {
-    private val abbey = BrowseItem("MPREb_abbey", "Abbey Road", "The Beatles • 1969 • 17 songs", null, BrowseType.ALBUM)
-    private val letItBe = BrowseItem("MPREb_let", "Let It Be", "The Beatles • 1970 • 12 songs", null, BrowseType.ALBUM)
-    private val beatles = BrowseItem("UCbeatles", "The Beatles", "Artist", null, BrowseType.ARTIST)
-    private val roadTrip = BrowseItem("VL_roadtrip", "Road Trip", "Playlist • 42 songs", null, BrowseType.PLAYLIST)
-
-    @Test
-    fun theFocusSaysWhatToQueue() {
-        assertEquals(VoiceFocus.ALBUM, voiceFocus(FOCUS_ALBUM))
-        assertEquals(VoiceFocus.ARTIST, voiceFocus(FOCUS_ARTIST))
-        assertEquals(VoiceFocus.SONG, voiceFocus("vnd.android.cursor.item/audio"))
-        assertEquals(VoiceFocus.SONG, voiceFocus(null))
-    }
-
-    @Test
-    fun aWildcardFocusLeavesTheKindToTheWords() {
-        // What the Assistant's handoff to a media app actually sends.
-        assertEquals(VoiceFocus.SONG, voiceFocus(WILDCARD_FOCUS, "abbey road the beatles"))
-        assertEquals(VoiceFocus.ALBUM, voiceFocus(WILDCARD_FOCUS, "play the album abbey road"))
-        assertEquals(VoiceFocus.PLAYLIST, voiceFocus(WILDCARD_FOCUS, "play my playlist road trip"))
-        // A focus that does name a kind still wins over the words.
-        assertEquals(VoiceFocus.ARTIST, voiceFocus(FOCUS_ARTIST, "play the album abbey road"))
-        assertEquals(VoiceFocus.PLAYLIST, voiceFocus(FOCUS_PLAYLIST))
-    }
-
     @Test
     fun theRequestIsTheQueryOrTheNamesItSent() {
         assertEquals("blinding lights", SpokenRequest("  blinding lights ").text)
         assertEquals("Blinding Lights The Weeknd", SpokenRequest(title = "Blinding Lights", artist = " The Weeknd ").text)
-        assertEquals("Abbey Road The Beatles", SpokenRequest(album = "Abbey Road", artist = "The Beatles", kind = VoiceFocus.ALBUM).text)
         assertEquals("", SpokenRequest().text)
     }
 
     @Test
-    fun theNamesAndFocusComeFromTheExtras() {
+    fun theTitleAndArtistComeFromTheExtrasWithoutTheAlbum() = runBlocking {
+        // The album extra names the page the song is on; searching it too can lead the mixed
+        // results to that page instead of the song.
         val extras = Bundle().apply {
-            putString(MediaStore.EXTRA_MEDIA_FOCUS, FOCUS_ALBUM)
-            putString(MediaStore.EXTRA_MEDIA_ALBUM, "Abbey Road")
-            putString(MediaStore.EXTRA_MEDIA_ARTIST, "The Beatles")
+            putString(MediaStore.EXTRA_MEDIA_TITLE, "Money for Nothing")
+            putString(MediaStore.EXTRA_MEDIA_ARTIST, "Dire Straits")
+            putString(MediaStore.EXTRA_MEDIA_ALBUM, "Brothers in Arms")
         }
         val request = spokenRequest("", extras)
-        assertEquals(VoiceFocus.ALBUM, request.kind)
-        assertEquals("Abbey Road The Beatles", request.text)
-        assertEquals(VoiceFocus.SONG, spokenRequest("", null).kind)
-    }
-
-    @Test
-    fun anAlbumRequestQueuesTheAlbumsSongs() = runBlocking {
-        val tracks = listOf(
-            Song("abbey1", "Come Together", "The Beatles", null),
-            Song("abbey2", "Something", "The Beatles", null),
-        )
-        val queued = spokenSongs(
-            SpokenRequest(album = "Abbey Road", artist = "The Beatles", kind = VoiceFocus.ALBUM),
-            search = { _, filter ->
-                // Another album of the same artist leads; the request named this one.
-                if (filter == SearchFilter.ALBUMS) listOf(SearchResult.Browse(letItBe), SearchResult.Browse(abbey)) else emptyList()
-            },
-            songsOf = { type, id -> if (type == BrowseType.ALBUM && id == abbey.browseId) tracks else emptyList() },
-        )
-        assertEquals(tracks, queued)
-    }
-
-    @Test
-    fun anArtistRequestQueuesTheArtistsSongs() = runBlocking {
-        val tracks = listOf(Song("help1", "Help!", "The Beatles", null))
-        val queued = spokenSongs(
-            SpokenRequest(artist = "The Beatles", kind = VoiceFocus.ARTIST),
-            search = { _, filter -> if (filter == SearchFilter.ARTISTS) listOf(SearchResult.Browse(beatles)) else emptyList() },
-            songsOf = { type, id -> if (type == BrowseType.ARTIST && id == beatles.browseId) tracks else emptyList() },
-        )
-        assertEquals(tracks, queued)
-    }
-
-    @Test
-    fun anAlbumNamedInTheWordsQueuesTheAlbumNotOneSong() = runBlocking {
-        // "Play abbey road by the beatles" arrives with a wildcard focus, and the song YouTube
-        // hands back is a song off the album, not the album.
-        val tracks = listOf(
-            Song("abbey1", "Come Together", "The Beatles", null),
-            Song("abbey2", "Something", "The Beatles", null),
-        )
-        val other = Song("here1", "Here Comes the Sun", "The Beatles", null)
-        val query = "abbey road the beatles"
-        val queued = spokenSongs(
-            SpokenRequest(query = query, kind = voiceFocus(WILDCARD_FOCUS, query)),
-            search = { _, filter ->
-                when (filter) {
-                    SearchFilter.ALL -> listOf(SearchResult.Track(other))
-                    SearchFilter.ALBUMS -> listOf(SearchResult.Browse(letItBe), SearchResult.Browse(abbey))
-                    else -> emptyList()
-                }
-            },
-            songsOf = { type, id -> if (type == BrowseType.ALBUM && id == abbey.browseId) tracks else emptyList() },
-        )
-        assertEquals(tracks, queued)
-    }
-
-    @Test
-    fun aSongTheWordsNameStillWinsOverAnAlbumOfTheSameName() = runBlocking {
-        // Dire Straits have both a song and a compilation called "Money for Nothing"; the song
-        // is what "play money for nothing dire straits" asks for.
-        val money = Song("dire", "Money for Nothing (Remastered 1996)", "Dire Straits", null)
-        val compilation = BrowseItem("MPREb_money", "Money For Nothing", "Dire Straits • 1988 • 12 songs", null, BrowseType.ALBUM)
-        val queued = spokenSongs(
-            SpokenRequest(query = "money for nothing dire straits", kind = voiceFocus(WILDCARD_FOCUS, "money for nothing dire straits")),
-            search = { _, filter ->
-                when (filter) {
-                    SearchFilter.ALL -> listOf(SearchResult.Track(money))
-                    SearchFilter.ALBUMS -> listOf(SearchResult.Browse(compilation))
-                    else -> emptyList()
-                }
-            },
-            songsOf = { _, _ -> error("the album page must not be queued") },
-        )
-        assertEquals(listOf(money), queued)
-    }
-
-    @Test
-    fun anArtistNamePlaysTheSongAndSkipsTheAlbumLookup() = runBlocking {
-        // "Play the beatles" names the artist; an album is called that too (the 30-track White
-        // Album), and the album's page must not take the request. The album search is a second
-        // YouTube request, so it should not even be made.
-        val song = Song("ussr", "Back In The U.S.S.R. (Remastered 2009)", "The Beatles", null)
-        val white = BrowseItem("MPREb_white", "The Beatles", "The Beatles • 1968 • 30 songs", null, BrowseType.ALBUM)
-        val searched = mutableListOf<SearchFilter>()
-        val queued = spokenSongs(
-            SpokenRequest(query = "the beatles", kind = voiceFocus(WILDCARD_FOCUS, "the beatles")),
-            search = { _, filter ->
-                searched += filter
-                if (filter == SearchFilter.ALL) listOf(SearchResult.Track(song)) else listOf(SearchResult.Browse(white))
-            },
-            songsOf = { _, _ -> error("the album page must not be queued") },
-        )
-        assertEquals(listOf(song), queued)
-        assertEquals(listOf(SearchFilter.ALL), searched)
-    }
-
-    @Test
-    fun theWordAlbumSearchesTheAlbumFilter() = runBlocking {
-        val request = spokenRequest("play the album abbey road", null)
-        assertEquals(VoiceFocus.ALBUM, request.kind)
-        // The word naming the kind, and the "play the" around it, are not part of the search.
-        assertEquals("abbey road", request.text)
-        val tracks = listOf(Song("abbey1", "Come Together", "The Beatles", null))
-        var searched: SearchFilter? = null
-        val queued = spokenSongs(
-            request,
-            search = { _, filter ->
-                searched = filter
-                if (filter == SearchFilter.ALBUMS) listOf(SearchResult.Browse(abbey)) else emptyList()
-            },
-            songsOf = { _, _ -> tracks },
-        )
-        assertEquals(SearchFilter.ALBUMS, searched)
-        assertEquals(tracks, queued)
-    }
-
-    @Test
-    fun theWordPlaylistSearchesThePlaylistFilter() = runBlocking {
-        val request = spokenRequest("play my playlist road trip", null)
-        assertEquals(VoiceFocus.PLAYLIST, request.kind)
-        assertEquals("road trip", request.text)
-        val tracks = listOf(Song("trip1", "Take It Easy", "Eagles", null))
-        var searched: SearchFilter? = null
-        val queued = spokenSongs(
-            request,
-            search = { _, filter ->
-                searched = filter
-                if (filter == SearchFilter.PLAYLISTS) listOf(SearchResult.Browse(roadTrip)) else emptyList()
-            },
-            songsOf = { type, id -> if (type == BrowseType.PLAYLIST && id == roadTrip.browseId) tracks else emptyList() },
-        )
-        assertEquals(SearchFilter.PLAYLISTS, searched)
-        assertEquals(tracks, queued)
-    }
-
-    @Test
-    fun anAlbumRequestThatFindsNoAlbumQueuesNothing() = runBlocking {
-        // No song of another result is played instead: the car fails the request and keeps playing.
-        val queued = spokenSongs(
-            SpokenRequest(album = "Abbey Road", kind = VoiceFocus.ALBUM),
-            search = { _, _ -> emptyList() },
-            songsOf = { _, _ -> emptyList() },
-        )
-        assertTrue(queued.isEmpty())
-    }
-
-    @Test
-    fun aSongRequestSearchesTitleAndArtistWithoutTheAlbum() = runBlocking {
-        // The album extra names the page the song is on; searching it too can lead a mixed
-        // search to that page instead of the song.
-        val request = SpokenRequest(title = "Money for Nothing", artist = "Dire Straits", album = "Brothers in Arms")
-        assertEquals("Money for Nothing Dire Straits", request.songText)
+        assertEquals("Money for Nothing Dire Straits", request.text)
         var searched: String? = null
-        val queued = spokenSongs(
-            request,
-            search = { text, _ -> searched = text; emptyList() },
-            songsOf = { _, _ -> emptyList() },
-        )
+        val queued = spokenSongs(request, search = { text, _ -> searched = text; emptyList() })
         assertEquals("Money for Nothing Dire Straits", searched)
         assertTrue(queued.isEmpty())
     }
 
     @Test
-    fun aSongRequestStillPlaysTheSongItNames() = runBlocking {
+    fun aSongRequestPlaysTheSongItNames() = runBlocking {
         val money = Song("yelawolf", "Money (feat. Jelly Roll)", "Yelawolf", null)
         val dire = Song("dire", "Money for Nothing (Remastered 1996)", "Dire Straits", null)
         val searched = mutableListOf<SearchFilter>()
@@ -232,10 +51,76 @@ class SpokenTest {
                 searched += filter
                 listOf(SearchResult.Track(money), SearchResult.Track(dire))
             },
-            songsOf = { _, _ -> emptyList() },
         )
         assertEquals(listOf(dire), queued)
-        // The words name the song, so no album search is spent on it.
         assertEquals(listOf(SearchFilter.ALL), searched)
+    }
+
+    @Test
+    fun theSongsSearchAnswersWhenTheMixedOneHasNoSong() = runBlocking {
+        val song = Song("only1", "Wonderboy", "Tenacious D", null)
+        val queued = spokenSongs(
+            SpokenRequest(query = "wonderboy"),
+            search = { _, filter -> if (filter == SearchFilter.ALL) emptyList() else listOf(SearchResult.Track(song)) },
+        )
+        assertEquals(listOf(song), queued)
+    }
+
+    @Test
+    fun aWildcardRequestPlaysTheSongTheWordsName() = runBlocking {
+        // "Play abbey road by the beatles" reaches a media app with a wildcard focus and those
+        // words alone, and the Assistant only ever asks for a song: one search, one song.
+        val sun = Song("here1", "Here Comes the Sun", "The Beatles", null)
+        val searched = mutableListOf<SearchFilter>()
+        val queued = spokenSongs(
+            SpokenRequest(query = "abbey road the beatles"),
+            search = { _, filter ->
+                searched += filter
+                listOf(SearchResult.Track(sun))
+            },
+        )
+        assertEquals(listOf(sun), queued)
+        assertEquals(listOf(SearchFilter.ALL), searched)
+    }
+
+    @Test
+    fun aPlaylistNamePlaysTheSongOfThatName() = runBlocking {
+        // "Play the playlist Road Trip" arrives as the words "Road Trip" and a wildcard focus,
+        // the word playlist already stripped: the song of that name is what is played.
+        val song = Song("trip_song", "Road Trip", "A Shell in the Pit", null)
+        val searched = mutableListOf<SearchFilter>()
+        val queued = spokenSongs(
+            SpokenRequest(query = "road trip"),
+            search = { _, filter ->
+                searched += filter
+                listOf(SearchResult.Track(song))
+            },
+        )
+        assertEquals(listOf(song), queued)
+        assertEquals(listOf(SearchFilter.ALL), searched)
+    }
+
+    @Test
+    fun anArtistNamePlaysTheSongWithOneSearch() = runBlocking {
+        // "Play the beatles" names the artist; the words are searched as songs, once.
+        val song = Song("ussr", "Back In The U.S.S.R. (Remastered 2009)", "The Beatles", null)
+        val searched = mutableListOf<SearchFilter>()
+        val queued = spokenSongs(
+            SpokenRequest(query = "the beatles"),
+            search = { _, filter ->
+                searched += filter
+                listOf(SearchResult.Track(song))
+            },
+        )
+        assertEquals(listOf(song), queued)
+        assertEquals(listOf(SearchFilter.ALL), searched)
+    }
+
+    @Test
+    fun aRequestWithNoWordsPlaysNothing() = runBlocking {
+        // "Play music" is answered from history by the car, not by a search.
+        val song = Song("any1", "Anything", "Anyone", null)
+        val queued = spokenSongs(SpokenRequest(), search = { _, _ -> listOf(SearchResult.Track(song)) })
+        assertTrue(queued.isEmpty())
     }
 }

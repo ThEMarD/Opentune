@@ -46,8 +46,6 @@ import java.util.concurrent.ConcurrentHashMap
 @UnstableApi
 class CarLibrary(
     private val context: Context,
-    /** An album's or an artist's songs, given as an argument so a test can answer without the network. */
-    private val browseSongs: suspend (BrowseType, String) -> List<Song> = ::pageSongs,
     /** YouTube search, given as an argument so a test can answer without the network. */
     private val remoteSearch: suspend (String, SearchFilter) -> List<SearchResult> = MusicRepository::search,
 ) {
@@ -178,15 +176,14 @@ class CarLibrary(
             // "Play music": what was played lately, or the liked songs.
             History.recents(History.records.value, MAX_SONGS).ifEmpty { LibraryStore.liked.value.map { it.toSong() } }.shuffled()
         } else {
-            // An album or an artist the request focused on queues that whole page; otherwise the
-            // song it named, not simply YouTube's first.
-            spokenSongs(request, remoteSearch, browseSongs)
+            // The song it named, not simply the first of the search's results.
+            spokenSongs(request, remoteSearch)
         }
         // In logcat (debug builds), beside onSearch's line, so an Assistant request can be
         // told from a typed car search. Before the guard, so a request that finds nothing
         // still says what it asked for. What the Assistant sent beyond the query is logged
-        // too: the focus it chose decides whether an album or an artist page is queued.
-        Log.d(TAG, "Assistant search \"$text\" (${request.kind.name.lowercase()}): ${songs.size} song(s)")
+        // too, since its title and artist settle the song.
+        Log.d(TAG, "Assistant search \"$text\": ${songs.size} song(s)")
         Log.d(TAG, "Assistant search extras: ${extras?.texts() ?: "none"}")
         // No match is no queue: handed over empty, it would end the song the car is playing
         // and leave it showing nothing. Failing the request reports that to the car instead,
@@ -237,7 +234,7 @@ class CarLibrary(
         return filter to (parts.getOrNull(1) ?: return null)
     }
 
-    /** What a request carried besides its query, as text: the focus, and any names it added. */
+    /** What a request carried besides its query, as text: the title and artist it added. */
     private fun Bundle.texts(): String = keySet().sorted().mapNotNull { key ->
         getCharSequence(key)?.let { "$key=$it" }
     }.joinToString().ifEmpty { "none" }

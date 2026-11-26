@@ -15,9 +15,8 @@ sealed interface LinkTarget {
     data class Song(val videoId: String) : LinkTarget
     data class Browse(val browseId: String) : LinkTarget
     /**
-     * "Play … on OpenTune" from the Assistant: the words it sent, and the title, artist and album
-     * it named when it sent those instead, with the focus that says which of them it wants. A
-     * request that names nothing means "play some music".
+     * "Play … on OpenTune" from the Assistant: the words it sent, and the title and artist it
+     * named when it sent those instead. A request that names nothing means "play some music".
      */
     data class PlaySearch(val request: SpokenRequest) : LinkTarget
     /** A song on another service (Apple Music, Deezer, Tidal…), to find and play here. */

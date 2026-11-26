@@ -1,7 +1,5 @@
 package com.opentune.playback
 
-import com.opentune.data.model.BrowseItem
-import com.opentune.data.model.BrowseType
 import com.opentune.data.model.Song
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -40,29 +38,5 @@ class VoiceMatchTest {
     @Test
     fun noResultsIsNoSong() {
         assertNull(bestVoiceMatch(emptyList(), "espresso", null, null))
-    }
-
-    @Test
-    fun anAlbumSearchPicksTheAlbumTheRequestNamed() {
-        val abbey = BrowseItem("MPREb_abbey", "Abbey Road", "Album • The Beatles • 1969", null, BrowseType.ALBUM)
-        val letItBe = BrowseItem("MPREb_let", "Let It Be", "Album • The Beatles • 1970", null, BrowseType.ALBUM)
-        assertEquals(abbey, bestVoiceBrowse(listOf(letItBe, abbey), "", "Abbey Road", "The Beatles"))
-    }
-
-    @Test
-    fun twoAlbumsOfTheSameNameAreSettledByTheArtist() {
-        // What the phone queued: a covers album listed above The Beatles' own, because both
-        // rows are called "Abbey Road" and the kind word sat where the artist was read.
-        val cover = BrowseItem("MPREb_autumn", "Abbey Road", "Album • Autumn 33 • 2019", null, BrowseType.ALBUM)
-        val abbey = BrowseItem("MPREb_abbey", "Abbey Road", "Album • The Beatles • 1969", null, BrowseType.ALBUM)
-        assertEquals(
-            abbey,
-            bestVoiceBrowse(listOf(cover, abbey), "abbey road the beatles", "Abbey Road", "The Beatles"),
-        )
-    }
-
-    @Test
-    fun noAlbumResultsIsNoAlbum() {
-        assertNull(bestVoiceBrowse(emptyList(), "abbey road", null, null))
     }
 }

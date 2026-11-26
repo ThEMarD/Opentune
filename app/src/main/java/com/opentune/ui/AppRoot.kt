@@ -11,7 +11,6 @@ import com.opentune.ui.server.ServerArtistScreen
 import com.opentune.ui.server.ServerArtistsScreen
 import com.opentune.ui.server.ServerNav
 import com.opentune.ui.server.ServerPlaylistScreen
-import com.opentune.playback.VoiceFocus
 import com.opentune.playback.bestVoiceMatch
 import com.opentune.playback.spokenSongs
 import com.opentune.ui.server.ServerScreen
@@ -429,14 +428,11 @@ fun AppRoot(vm: PlayerViewModel) {
                     val recent = com.opentune.data.history.History.recents(com.opentune.data.history.History.records.value, 50)
                     if (recent.isNotEmpty()) vm.playAll(recent, 0, true, "Recently played")
                 } else {
-                    // An album or an artist the request focused on queues that whole page; otherwise
-                    // the song it named, not just the first of the mixed search, with radio following it.
+                    // The song the request named, not just the first of the mixed search, with
+                    // radio following it.
                     val songs = runCatching { spokenSongs(request) }.getOrDefault(emptyList())
-                    when {
-                        songs.isEmpty() -> com.opentune.data.Pills.error(com.opentune.i18n.Tr.f("Nothing found for \"{0}\"", text))
-                        request.kind == VoiceFocus.SONG -> vm.play(songs.first(), text)
-                        else -> vm.playAll(songs, 0, false, text)
-                    }
+                    if (songs.isEmpty()) com.opentune.data.Pills.error(com.opentune.i18n.Tr.f("Nothing found for \"{0}\"", text))
+                    else vm.play(songs.first(), text)
                 }
             }
             null -> return@LaunchedEffect
