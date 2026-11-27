@@ -140,8 +140,12 @@ internal fun LandscapePlayer(
         }
         Spacer(Modifier.width(32.dp))
         BoxWithConstraints(Modifier.weight(1f).fillMaxHeight().focusGroup()) {
-            // Short screens drop the coming lines first, then the volume.
-            val roomy = maxHeight >= 300.dp
+            val tall = maxHeight >= 300.dp
+            var titleLines by remember { mutableIntStateOf(1) }
+            // Short screens drop the coming lines first, then the volume. A name long enough to take
+            // two lines costs a line of height, so on a screen that can't hold both the volume gives
+            // way to the name, the same trade short screens already make.
+            val roomy = tall && !(maxHeight < 340.dp && titleLines > 1)
             Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.SpaceBetween) {
                 Row(verticalAlignment = Alignment.Top) {
                     // Lyrics or the queue in the cover's place: the cover stays in sight, small, before the title.
@@ -158,7 +162,18 @@ internal fun LandscapePlayer(
                             Spacer(Modifier.width(4.dp))
                             Icon(outputRoute.icon, null, Modifier.size(14.dp), tint = scheme.primary)
                         }
-                        Text(song.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        // Two lines before it gives up: a long name ("I Remember Everything (feat. Kacey
+                        // Musgraves)") fits whole on one wide side of the phone, a short one still takes one.
+                        // Beside the lyrics or the queue the column is half as wide, so there the extra line
+                        // buys nothing and the taller header pushes the controls off the bottom.
+                        Text(
+                            song.title,
+                            style = MaterialTheme.typography.headlineSmall,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = if (side == null && tall) 2 else 1,
+                            overflow = TextOverflow.Ellipsis,
+                            onTextLayout = { titleLines = it.lineCount },
+                        )
                         Text(
                             listOfNotNull(song.artist.takeIf { it.isNotBlank() }, song.albumName?.takeIf { it.isNotBlank() }).joinToString(" — "),
                             style = MaterialTheme.typography.titleMedium,
