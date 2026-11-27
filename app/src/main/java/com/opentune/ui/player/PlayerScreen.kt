@@ -64,6 +64,10 @@ import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.StarBorder
 import androidx.compose.material.icons.rounded.FavoriteBorder
+import androidx.compose.material.icons.rounded.Repeat
+import androidx.compose.material.icons.rounded.RepeatOne
+import androidx.compose.material.icons.rounded.Shuffle
+import androidx.media3.common.Player
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.Equalizer
 import androidx.compose.material.icons.rounded.Groups
@@ -141,6 +145,7 @@ import com.opentune.data.settings.ThemeSettings
 import com.opentune.data.together.Together
 import com.opentune.playback.AudioFormatInfo
 import com.opentune.playback.PlaybackRequests
+import com.opentune.playback.ShuffleMode
 import com.opentune.ui.LyricsState
 import com.opentune.ui.PlayerViewModel
 import com.opentune.ui.components.Artwork
@@ -416,6 +421,8 @@ fun PlayerLayout(
     val controlsHidden = controlsAway || (scrolledAway && pane == Pane.LYRICS)
     val liked by LibraryStore.liked.collectAsState()
     val isLiked = liked.any { it.videoId == current.videoId }
+    // The modes the title row shows beside the heart; the queue's pill moves the same two.
+    val playerModes = PlayerModes(state.shuffleMode, state.repeatMode, actions.toggleShuffle, actions.cycleRepeat)
     val device = rememberOutputDeviceName()
     val outputRoute = rememberOutputRoute()
     val sleepLabel = sleepTimerLabel()
@@ -975,7 +982,7 @@ fun PlayerLayout(
                                 Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                                     Artwork(current.thumbnailUrl.artworkAt(ROW_ART_PX), Modifier.size(84.dp), RoundedCornerShape(14.dp))
                                     Spacer(Modifier.width(16.dp))
-                                    TitleRow(current, isLiked, onLike = { LibraryStore.setLiked(current, !isLiked) }, onMore = { showMenu = true }, compact = true)
+                                    TitleRow(current, isLiked, onLike = { LibraryStore.setLiked(current, !isLiked) }, onMore = { showMenu = true }, compact = true, modes = playerModes)
                                 }
                                 LyricsView(
                                     state.lyrics,
@@ -1046,6 +1053,7 @@ fun PlayerLayout(
                                     Modifier
                                         .onGloballyPositioned { if (!hidden && !flight.active && coverLift == 0f && dragOffset == 0f) bigTitle = it.boundsInRoot() }
                                         .graphicsLayer { alpha = if (flight.active && bigTitle != null) 0f else 1f },
+                                    modes = playerModes,
                                 )
                             } else {
                                 Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -1061,7 +1069,7 @@ fun PlayerLayout(
                                     )
                                     Spacer(Modifier.width(14.dp))
                                     Row(Modifier.weight(1f).graphicsLayer { alpha = if (flight.active && bigTitle != null) 0f else 1f }, verticalAlignment = Alignment.CenterVertically) {
-                                        TitleRow(current, isLiked, onLike = { LibraryStore.setLiked(current, !isLiked) }, onMore = { showMenu = true }, compact = true)
+                                        TitleRow(current, isLiked, onLike = { LibraryStore.setLiked(current, !isLiked) }, onMore = { showMenu = true }, compact = true, modes = playerModes)
                                     }
                                 }
                                 // Between lyrics and queue the new list slides up from below on a soft
@@ -1367,6 +1375,7 @@ fun PlayerLayout(
                             origin = origin,
                             onLike = { LibraryStore.setLiked(current, !isLiked) },
                             onMore = { showMenu = true },
+                            modes = playerModes,
                         )
                     } }
                 }
@@ -1542,9 +1551,20 @@ private fun LyricsOffsetDialog(videoId: String, autoMs: Long, onDismiss: () -> U
     )
 }
 
-/** Title and artist with the heart and "…" glass buttons on the right. */
+/** What the title row's shuffle and repeat need: the modes now, and what a tap does. */
+internal data class PlayerModes(val shuffleMode: ShuffleMode, val repeatMode: Int, val onShuffle: () -> Unit, val onRepeat: () -> Unit)
+
+/** Title and artist with the heart, shuffle, repeat and "…" glass buttons on the right. */
 @Composable
-private fun RowScope.TitleRow(song: Song, liked: Boolean, onLike: () -> Unit, onMore: () -> Unit, compact: Boolean = false) {
+private fun RowScope.TitleRow(
+    song: Song,
+    liked: Boolean,
+    onLike: () -> Unit,
+    onMore: () -> Unit,
+    compact: Boolean = false,
+    /** The player's modes; null where the row is drawn without them. */
+    modes: PlayerModes? = null,
+) {
     val apple = AppSettings.ui.collectAsState().value.playerStyle == PlayerStyle.APPLE_MUSIC
     Column(Modifier.weight(1f)) {
         // Tapping the title opens its album, and the artist opens their page.
@@ -1577,6 +1597,37 @@ private fun RowScope.TitleRow(song: Song, liked: Boolean, onLike: () -> Unit, on
     }
     Spacer(Modifier.width(10.dp))
     if (apple) StarButton(liked, onLike) else HeartButton(liked, onLike)
+    // Shuffle and repeat beside the heart, so all three are together without opening the queue.
+    modes?.let { m ->
+        val haptics = com.opentune.ui.components.rememberHaptics()
+        ModeButton(
+            Icons.Rounded.Shuffle,
+            when (m.shuffleMode) {
+                ShuffleMode.OFF -> "Shuffle off"
+                ShuffleMode.ON -> "Shuffle on"
+                ShuffleMode.SMART -> "Smart shuffle"
+            },
+            on = m.shuffleMode != ShuffleMode.OFF,
+        ) { haptics.pattern(com.opentune.ui.components.Haptics.Pattern.SHUFFLE); m.onShuffle() }
+        ModeButton(
+            if (m.repeatMode == Player.REPEAT_MODE_ONE) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat,
+            when (m.repeatMode) {
+                Player.REPEAT_MODE_ONE -> "Repeat one"
+                Player.REPEAT_MODE_ALL -> "Repeat all"
+                else -> "Repeat off"
+            },
+            on = m.repeatMode != Player.REPEAT_MODE_OFF,
+        ) {
+            haptics.pattern(
+                when (m.repeatMode) {
+                    Player.REPEAT_MODE_OFF -> com.opentune.ui.components.Haptics.Pattern.REPEAT_ALL
+                    Player.REPEAT_MODE_ALL -> com.opentune.ui.components.Haptics.Pattern.REPEAT_ONE
+                    else -> com.opentune.ui.components.Haptics.Pattern.OFF
+                },
+            )
+            m.onRepeat()
+        }
+    }
     Spacer(Modifier.width(10.dp))
     Box(
         Modifier.size(46.dp).clip(CircleShape)
@@ -1589,9 +1640,16 @@ private fun RowScope.TitleRow(song: Song, liked: Boolean, onLike: () -> Unit, on
 }
 
 @Composable
-private fun TitleRow(song: Song, liked: Boolean, onLike: () -> Unit, onMore: () -> Unit, modifier: Modifier = Modifier) {
+private fun TitleRow(
+    song: Song,
+    liked: Boolean,
+    onLike: () -> Unit,
+    onMore: () -> Unit,
+    modifier: Modifier = Modifier,
+    modes: PlayerModes? = null,
+) {
     Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        TitleRow(song, liked, onLike, onMore, compact = false)
+        TitleRow(song, liked, onLike, onMore, compact = false, modes = modes)
     }
 }
 
@@ -1606,6 +1664,7 @@ internal fun TitleFlight(
     big: androidx.compose.ui.geometry.Rect, small: androidx.compose.ui.geometry.Rect,
     q: () -> Float, origin: androidx.compose.ui.geometry.Offset,
     onLike: () -> Unit, onMore: () -> Unit,
+    modes: PlayerModes? = null,
 ) {
     val sideGap = with(LocalDensity.current) { 14.dp.toPx() }
     val under = bigTitle.top - big.bottom
@@ -1633,10 +1692,10 @@ internal fun TitleFlight(
         },
     ) {
         Row(Modifier.fillMaxWidth().align(Alignment.CenterStart).graphicsLayer { alpha = 1f - side(q()) }, verticalAlignment = Alignment.CenterVertically) {
-            TitleRow(song, liked, onLike = onLike, onMore = onMore, compact = false)
+            TitleRow(song, liked, onLike = onLike, onMore = onMore, compact = false, modes = modes)
         }
         Row(Modifier.fillMaxWidth().align(Alignment.CenterStart).graphicsLayer { alpha = side(q()) }, verticalAlignment = Alignment.CenterVertically) {
-            TitleRow(song, liked, onLike = onLike, onMore = onMore, compact = true)
+            TitleRow(song, liked, onLike = onLike, onMore = onMore, compact = true, modes = modes)
         }
     }
 }
@@ -1670,6 +1729,29 @@ private fun StarButton(liked: Boolean, onClick: () -> Unit) {
 
 /** How strongly the like and more buttons beside the title tint what's behind them. */
 private const val PLAYER_BUTTON_TINT = 0.14f
+
+/** A mode beside the heart: a glass disc, its icon lit while the mode is on. */
+@Composable
+private fun ModeButton(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    on: Boolean,
+    onClick: () -> Unit,
+) {
+    Box(
+        Modifier.size(46.dp)
+            .clip(CircleShape)
+            .background(LocalContentColor.current.copy(alpha = PLAYER_BUTTON_TINT))
+            .clickable(
+                interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                indication = com.opentune.ui.components.FocusRing(CircleShape),
+                onClick = onClick,
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(icon, label, Modifier.size(24.dp), tint = if (on) MaterialTheme.colorScheme.primary else LocalContentColor.current)
+    }
+}
 
 /** The heart pops when tapped on. */
 @Composable

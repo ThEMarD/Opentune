@@ -511,7 +511,6 @@ class PlayerConnection(private val context: Context) {
         SmartShuffle.toRemove(upcoming, emptySet(), LibraryStore.hidden.value).forEach { controller.removeMediaItem(from + it) }
     }
 
-    /** Off, then repeat the whole queue, then repeat the current track. */
     fun cycleRepeatMode() {
         val controller = controller ?: return
         controller.repeatMode = nextRepeatMode(controller.repeatMode)

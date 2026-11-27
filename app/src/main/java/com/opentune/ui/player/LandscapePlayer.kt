@@ -42,6 +42,9 @@ import androidx.compose.material.icons.rounded.Smartphone
 import androidx.compose.material.icons.rounded.Lyrics
 import androidx.compose.material.icons.rounded.Shuffle
 import androidx.compose.material.icons.rounded.Repeat
+import androidx.compose.material.icons.rounded.RepeatOne
+import androidx.media3.common.Player
+import com.opentune.playback.ShuffleMode
 import androidx.compose.foundation.focusGroup
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.withFrameNanos
@@ -173,7 +176,41 @@ internal fun LandscapePlayer(
                 val lines = if (showLines) rememberLyricLines(state.lyrics, lyricsPosition) else null
                 if (lines != null) LyricsPeek(lines, next = roomy, animate = animate, onClick = onLyrics)
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    RoundIcon(if (liked) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder, if (liked) "Unlike" else "Like", { haptics.pattern(if (liked) com.opentune.ui.components.Haptics.Pattern.OFF else com.opentune.ui.components.Haptics.Pattern.LIKE); onLike() }, tint = if (liked) scheme.primary else scheme.onSurface)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        RoundIcon(if (liked) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder, if (liked) "Unlike" else "Like", { haptics.pattern(if (liked) com.opentune.ui.components.Haptics.Pattern.OFF else com.opentune.ui.components.Haptics.Pattern.LIKE); onLike() }, tint = if (liked) scheme.primary else scheme.onSurface)
+                        // The modes the portrait player's pill carries, beside the heart: on this side the
+                        // pill's place is taken by the lyrics, so they sit with the heart instead, and
+                        // all three stay within reach whichever way the phone is held.
+                        RoundIcon(
+                            Icons.Rounded.Shuffle,
+                            when (state.shuffleMode) {
+                                ShuffleMode.OFF -> "Shuffle off"
+                                ShuffleMode.ON -> "Shuffle on"
+                                ShuffleMode.SMART -> "Smart shuffle"
+                            },
+                            { haptics.pattern(com.opentune.ui.components.Haptics.Pattern.SHUFFLE); actions.toggleShuffle() },
+                            tint = if (state.shuffleMode == ShuffleMode.OFF) scheme.onSurface else scheme.primary,
+                        )
+                        RoundIcon(
+                            if (state.repeatMode == Player.REPEAT_MODE_ONE) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat,
+                            when (state.repeatMode) {
+                                Player.REPEAT_MODE_ONE -> "Repeat one"
+                                Player.REPEAT_MODE_ALL -> "Repeat all"
+                                else -> "Repeat off"
+                            },
+                            {
+                                haptics.pattern(
+                                    when (state.repeatMode) {
+                                        Player.REPEAT_MODE_OFF -> com.opentune.ui.components.Haptics.Pattern.REPEAT_ALL
+                                        Player.REPEAT_MODE_ALL -> com.opentune.ui.components.Haptics.Pattern.REPEAT_ONE
+                                        else -> com.opentune.ui.components.Haptics.Pattern.OFF
+                                    },
+                                )
+                                actions.cycleRepeat()
+                            },
+                            tint = if (state.repeatMode == Player.REPEAT_MODE_OFF) scheme.onSurface else scheme.primary,
+                        )
+                    }
                     Row(horizontalArrangement = Arrangement.spacedBy(18.dp), verticalAlignment = Alignment.CenterVertically) {
                         Tap("Previous", { haptics.pattern(com.opentune.ui.components.Haptics.Pattern.PREVIOUS); previousRolls++; actions.previous() }) { SkipGlyph(false, previousRolls, scheme.onSurface, animate, Modifier.size(38.dp)) }
                         Tap(if (state.isPlaying) "Pause" else "Play", { haptics.pattern(if (state.isPlaying) com.opentune.ui.components.Haptics.Pattern.PAUSE else com.opentune.ui.components.Haptics.Pattern.PLAY); actions.togglePlay() }) { PlayPauseGlyph(state.isPlaying, scheme.onSurface, animate, Modifier.size(54.dp)) }

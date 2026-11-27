@@ -835,8 +835,6 @@ class PlaybackService : MediaLibraryService() {
                     LibraryStore.setLiked(song, !LibraryStore.isLiked(song.videoId))
                 }
                 ACTION_SHUFFLE -> player.shuffleModeEnabled = !player.shuffleModeEnabled
-                // One tap at a time: the queue, then the song, then off again. It moves the same
-                // repeat mode the app's own button does, so the two always show the same state.
                 ACTION_REPEAT -> player.repeatMode = nextRepeatMode(player.repeatMode)
                 else -> return Futures.immediateFuture(SessionResult(SessionError.ERROR_NOT_SUPPORTED))
             }
