@@ -982,7 +982,7 @@ fun PlayerLayout(
                                 Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                                     Artwork(current.thumbnailUrl.artworkAt(ROW_ART_PX), Modifier.size(84.dp), RoundedCornerShape(14.dp))
                                     Spacer(Modifier.width(16.dp))
-                                    TitleRow(current, isLiked, onLike = { LibraryStore.setLiked(current, !isLiked) }, onMore = { showMenu = true }, compact = true, modes = playerModes)
+                                    TitleRow(current, isLiked, onLike = { LibraryStore.setLiked(current, !isLiked) }, onMore = { showMenu = true }, modes = playerModes)
                                 }
                                 LyricsView(
                                     state.lyrics,
@@ -1069,7 +1069,7 @@ fun PlayerLayout(
                                     )
                                     Spacer(Modifier.width(14.dp))
                                     Row(Modifier.weight(1f).graphicsLayer { alpha = if (flight.active && bigTitle != null) 0f else 1f }, verticalAlignment = Alignment.CenterVertically) {
-                                        TitleRow(current, isLiked, onLike = { LibraryStore.setLiked(current, !isLiked) }, onMore = { showMenu = true }, compact = true, modes = playerModes)
+                                        TitleRow(current, isLiked, onLike = { LibraryStore.setLiked(current, !isLiked) }, onMore = { showMenu = true }, modes = playerModes)
                                     }
                                 }
                                 // Between lyrics and queue the new list slides up from below on a soft
@@ -1561,7 +1561,6 @@ private fun RowScope.TitleRow(
     liked: Boolean,
     onLike: () -> Unit,
     onMore: () -> Unit,
-    compact: Boolean = false,
     /** The player's modes; null where the row is drawn without them. */
     modes: PlayerModes? = null,
 ) {
@@ -1579,13 +1578,10 @@ private fun RowScope.TitleRow(
         MarqueeText(
             song.title,
             Modifier.fillMaxWidth().then(if (openAlbum != null) Modifier.clickable(onClickLabel = "Open album", onClick = openAlbum) else Modifier),
-            // Beside four buttons the headline size leaves a phone too little room for a song
-            // name, which is cut around twelve characters; those rows drop a step.
-            style = when {
-                apple -> MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
-                compact || modes != null -> MaterialTheme.typography.titleLarge
-                else -> MaterialTheme.typography.headlineSmall
-            },
+            // Not the headline size: four buttons beside it leave a phone too little room, and
+            // song names were cut around twelve characters.
+            style = if (apple) MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
+            else MaterialTheme.typography.titleLarge,
         )
         // Each artist's name opens their own page.
         val named = menu?.viewArtistNamed?.takeIf { !song.videoId.startsWith("local:") }
@@ -1652,7 +1648,7 @@ private fun TitleRow(
     modes: PlayerModes? = null,
 ) {
     Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        TitleRow(song, liked, onLike, onMore, compact = false, modes = modes)
+        TitleRow(song, liked, onLike, onMore, modes = modes)
     }
 }
 
@@ -1694,11 +1690,8 @@ internal fun TitleFlight(
             }
         },
     ) {
-        Row(Modifier.fillMaxWidth().align(Alignment.CenterStart).graphicsLayer { alpha = 1f - side(q()) }, verticalAlignment = Alignment.CenterVertically) {
-            TitleRow(song, liked, onLike = onLike, onMore = onMore, compact = false, modes = modes)
-        }
-        Row(Modifier.fillMaxWidth().align(Alignment.CenterStart).graphicsLayer { alpha = side(q()) }, verticalAlignment = Alignment.CenterVertically) {
-            TitleRow(song, liked, onLike = onLike, onMore = onMore, compact = true, modes = modes)
+        Row(Modifier.fillMaxWidth().align(Alignment.CenterStart), verticalAlignment = Alignment.CenterVertically) {
+            TitleRow(song, liked, onLike = onLike, onMore = onMore, modes = modes)
         }
     }
 }
@@ -1735,8 +1728,8 @@ private const val PLAYER_BUTTON_TINT = 0.14f
 
 /**
  * A mode beside the heart: a glass disc, its icon lit while the mode is on. The disc is
- * smaller than the heart's so the title keeps its width, but the tap target around it is
- * as tall as the heart and wider than the disc, invisibly.
+ * smaller than the heart's so the title keeps its width, but the button around it is as
+ * big as the heart, invisibly.
  */
 @Composable
 private fun ModeButton(
@@ -1746,7 +1739,7 @@ private fun ModeButton(
     onClick: () -> Unit,
 ) {
     Box(
-        Modifier.size(width = 42.dp, height = 46.dp)
+        Modifier.size(46.dp)
             .clip(CircleShape)
             .clickable(
                 interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
