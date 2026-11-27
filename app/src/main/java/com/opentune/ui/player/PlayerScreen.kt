@@ -873,6 +873,8 @@ fun PlayerLayout(
                                     onSyncLine = syncLine,
                                     playing = lyricsPlaying,
                                     seeks = lyricsSeeks,
+                                    // Beside the cover the pane is short: its ends stop at lines.
+                                    lineEdges = true,
                                 )
                             }
                             Pane.QUEUE -> { ->

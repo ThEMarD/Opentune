@@ -139,6 +139,12 @@ fun LyricsView(
     seeks: () -> Long = { 0L },
     /** Follow the player's existing focus timer and touch-to-reveal controls. */
     controlsVisible: Boolean = true,
+    /**
+     * Stop at whole lines: a row that only part fits fades right away, so the pane's
+     * edge falls between lines instead of through the middle of a word. For the side
+     * pane, where the height is tight and a cut line is in sight beside the controls.
+     */
+    lineEdges: Boolean = false,
 ) {
     // The song and its lines as they were when sharing began, so a song
     // change while the sheet is open can't mix one song's words with another's.
@@ -173,6 +179,7 @@ fun LyricsView(
                                 selection.clear()
                             }
                         },
+                        lineEdges = lineEdges,
                     )
                     else PlainLyrics(lyrics.lines.joinToString("\n") { it.text }, lyrics.source, note = null)
                 is Lyrics.Plain -> PlainLyrics(lyrics.text, lyrics.source)
@@ -373,6 +380,8 @@ private fun SyncedLyrics(
     /** Lines picked for a lyric card, by index; null where there's no song to share. */
     selection: androidx.compose.runtime.snapshots.SnapshotStateList<Int>? = null,
     onShareSelection: (() -> Unit)? = null,
+    /** Rows that only part fit fade away, so the list's ends fall between lines. */
+    lineEdges: Boolean = false,
 ) {
     val ui by AppSettings.ui.collectAsState()
     val reduced = ui.reduceAnimation || !android.animation.ValueAnimator.areAnimatorsEnabled()
@@ -502,6 +511,9 @@ private fun SyncedLyrics(
                         // The rows after the one the list is heading for set off a little after
                         // one another, so the gaps open as it leaves and close as it lands.
                         translationY = glideRun?.let { trailOf(it, r + 1, elapsed.floatValue) } ?: 0f
+                        // Part on screen, the row is almost gone: a line coming or going is a
+                        // wash of colour at the edge rather than a word sliced in half there.
+                        if (lineEdges) alpha = wholeLine(listState, r + 1)
                     },
                 ) {
                 when (row) {
@@ -584,28 +596,66 @@ private fun SyncedLyrics(
 /**
  * Lines thin out toward the list's top and bottom edges instead of being cut
  * off along a hard line there: the list is drawn into its own layer and
- * faded out over [top] and [bottom] with a gradient mask.
+ * faded out over [top] and [bottom] with a gradient mask. The last [clear] at
+ * each end is empty outright, so a line that runs over the edge leaves no
+ * slice of itself behind below the fade's first steps.
  */
-private fun Modifier.softEdges(top: androidx.compose.ui.unit.Dp, bottom: androidx.compose.ui.unit.Dp): Modifier =
+private fun Modifier.softEdges(
+    top: androidx.compose.ui.unit.Dp,
+    bottom: androidx.compose.ui.unit.Dp,
+    clear: androidx.compose.ui.unit.Dp = EDGE_CLEAR,
+): Modifier =
     graphicsLayer { compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen }
         .drawWithContent {
             drawContent()
             val h = size.height
             if (h <= 0f) return@drawWithContent
-            val t = (top.toPx() / h).coerceIn(0f, 0.5f)
-            val b = (bottom.toPx() / h).coerceIn(0f, 0.5f)
+            val c = (clear.toPx() / h).coerceIn(0f, 0.2f)
+            val t = (top.toPx() / h).coerceIn(c, 0.45f)
+            val b = (bottom.toPx() / h).coerceIn(0f, 0.45f)
             drawRect(
                 androidx.compose.ui.graphics.Brush.verticalGradient(
-                    0f to Color.Transparent, t to Color.Black, (1f - b) to Color.Black, 1f to Color.Transparent,
+                    0f to Color.Transparent,
+                    c to Color.Transparent,
+                    (c + t).coerceAtMost(0.5f) to Color.Black,
+                    (1f - c - b).coerceAtLeast(0.5f) to Color.Black,
+                    (1f - c) to Color.Transparent,
+                    1f to Color.Transparent,
                 ),
                 blendMode = androidx.compose.ui.graphics.BlendMode.DstIn,
             )
         }
 
+/**
+ * How much of a row has to be on screen before it is shown at all: under this
+ * it's nearly gone, so the pane's ends fall between lines rather than across
+ * one. Lines sat on the anchor (the one being sung and the coming ones) are
+ * whole, so the fade only ever costs the line already going out of sight.
+ */
+private const val PARTLY_SEEN = 0.55f
+
+/**
+ * The alpha for the row at [index] from how much of it is on screen: whole rows
+ * as they are, part rows nearly gone, and smoothly between the two so nothing
+ * blinks in or out as the list moves.
+ */
+private fun wholeLine(state: LazyListState, index: Int): Float {
+    val info = state.layoutInfo
+    val row = info.visibleItemsInfo.firstOrNull { it.index == index } ?: return 0f
+    if (row.size <= 0) return 1f
+    val top = maxOf(row.offset, info.viewportStartOffset)
+    val bottom = minOf(row.offset + row.size, info.viewportEndOffset)
+    val shown = ((bottom - top).toFloat() / row.size).coerceIn(0f, 1f)
+    return ((shown - PARTLY_SEEN) / (1f - PARTLY_SEEN)).coerceIn(0f, 1f)
+}
+
 /** How far a line's blur and glow may spread past the lyrics' sides. */
 private val SIDE_BLEED = 24.dp
 private val EDGE_FADE_TOP = 18.dp
 private val EDGE_FADE_BOTTOM = 96.dp
+
+/** The band at each end of the lyrics that stays empty, so no line is left cut in half there. */
+private val EDGE_CLEAR = 16.dp
 
 /**
  * One move of the list to the next line: how far ([delta] px, positive when the
