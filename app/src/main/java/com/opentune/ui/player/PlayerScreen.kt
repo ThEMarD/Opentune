@@ -1579,9 +1579,11 @@ private fun RowScope.TitleRow(
         MarqueeText(
             song.title,
             Modifier.fillMaxWidth().then(if (openAlbum != null) Modifier.clickable(onClickLabel = "Open album", onClick = openAlbum) else Modifier),
+            // Beside four buttons the headline size leaves a phone too little room for a song
+            // name, which is cut around twelve characters; those rows drop a step.
             style = when {
                 apple -> MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
-                compact -> MaterialTheme.typography.titleLarge
+                compact || modes != null -> MaterialTheme.typography.titleLarge
                 else -> MaterialTheme.typography.headlineSmall
             },
         )
@@ -1595,7 +1597,7 @@ private fun RowScope.TitleRow(
             else MaterialTheme.typography.titleMedium,
         )
     }
-    Spacer(Modifier.width(8.dp))
+    Spacer(Modifier.width(6.dp))
     if (apple) StarButton(liked, onLike) else HeartButton(liked, onLike)
     // Shuffle and repeat beside the heart, so all three are together without opening the queue.
     // Smaller than the heart, and tight against it, so the title keeps its width.
@@ -1629,7 +1631,7 @@ private fun RowScope.TitleRow(
             m.onRepeat()
         }
     }
-    Spacer(Modifier.width(8.dp))
+    Spacer(Modifier.width(6.dp))
     Box(
         Modifier.size(46.dp).clip(CircleShape)
             .background(if (apple) Color.White.copy(alpha = 0.14f) else LocalContentColor.current.copy(alpha = PLAYER_BUTTON_TINT))
@@ -1731,7 +1733,11 @@ private fun StarButton(liked: Boolean, onClick: () -> Unit) {
 /** How strongly the like and more buttons beside the title tint what's behind them. */
 private const val PLAYER_BUTTON_TINT = 0.14f
 
-/** A mode beside the heart: a glass disc, its icon lit while the mode is on. */
+/**
+ * A mode beside the heart: a glass disc, its icon lit while the mode is on. The disc is
+ * smaller than the heart's so the title keeps its width, but the tap target around it is
+ * as tall as the heart and wider than the disc, invisibly.
+ */
 @Composable
 private fun ModeButton(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
@@ -1740,9 +1746,8 @@ private fun ModeButton(
     onClick: () -> Unit,
 ) {
     Box(
-        Modifier.size(38.dp)
+        Modifier.size(width = 42.dp, height = 46.dp)
             .clip(CircleShape)
-            .background(LocalContentColor.current.copy(alpha = PLAYER_BUTTON_TINT))
             .clickable(
                 interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
                 indication = com.opentune.ui.components.FocusRing(CircleShape),
@@ -1750,7 +1755,14 @@ private fun ModeButton(
             ),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(icon, label, Modifier.size(21.dp), tint = if (on) MaterialTheme.colorScheme.primary else LocalContentColor.current)
+        Box(
+            Modifier.size(38.dp)
+                .clip(CircleShape)
+                .background(LocalContentColor.current.copy(alpha = PLAYER_BUTTON_TINT)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(icon, label, Modifier.size(21.dp), tint = if (on) MaterialTheme.colorScheme.primary else LocalContentColor.current)
+        }
     }
 }
 
