@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -48,6 +49,20 @@ import org.robolectric.annotation.GraphicsMode
 class LandscapeTitleTest {
     @get:Rule val compose = createAndroidComposeRule<androidx.activity.ComponentActivity>()
 
+    /**
+     * A phone on its side: the window the screen reports, and how much of its top and bottom the
+     * system bars keep — the player lays itself out in what is left, as its own
+     * `windowInsetsPadding(systemBars)` does. Both read off the phones: `wm size` and `wm density`
+     * for the window, and the title's top and the volume row's bottom in the player against them.
+     *
+     * Lenovo: 2340x1080 at 440dpi, its content running 127..991px down the window.
+     * motorola: 2400x1080 at 400dpi, its content running 115..1000px down the window.
+     */
+    private class Side(val window: Int, val barTop: Int, val barBottom: Int)
+
+    private val lenovo = Side(window = 393, barTop = 28, barBottom = 15)
+    private val motorola = Side(window = 432, barTop = 28, barBottom = 22)
+
     /** 45 characters: the longest name in the library, "I Remember Everything (feat. Kacey Musgraves)". */
     private val longTitle = "I Remember Everything (feat. Kacey Musgraves)"
     private val shortTitle = "Nine Ball"
@@ -73,20 +88,20 @@ class LandscapeTitleTest {
     )
 
     /**
-     * The Lenovo's side: 393dp tall, less the 43dp its system bars keep, which is the height the
-     * column really gets — where a second title line has to fit beside everything else.
+     * The Lenovo's side is the tightest: 393dp of window, and its bars leave the column 314dp to
+     * hold a second title line beside everything else.
      */
-    @Test @Config(qualifiers = "w851dp-h350dp-land-xxhdpi")
-    fun longTitleTakesTwoLinesAndNothingIsClipped() = shoot("landscape/title-long-lenovo", longTitle, lines = 2)
+    @Test @Config(qualifiers = "w851dp-h393dp-land-xxhdpi")
+    fun longTitleTakesTwoLinesAndNothingIsClipped() = shoot(lenovo, "landscape/title-long-lenovo", longTitle, lines = 2)
 
-    @Test @Config(qualifiers = "w851dp-h350dp-land-xxhdpi")
-    fun shortTitleStaysOnOneLine() = shoot("landscape/title-short-lenovo", shortTitle, lines = 1)
+    @Test @Config(qualifiers = "w851dp-h393dp-land-xxhdpi")
+    fun shortTitleStaysOnOneLine() = shoot(lenovo, "landscape/title-short-lenovo", shortTitle, lines = 1)
 
     /** The motorola's taller side has room for the second line and both lyric lines. */
     @Test @Config(qualifiers = "w960dp-h432dp-land-xxhdpi")
-    fun longTitleTakesTwoLinesOnTallerScreen() = shoot("landscape/title-long-motorola", longTitle, lines = 2)
+    fun longTitleTakesTwoLinesOnTallerScreen() = shoot(motorola, "landscape/title-long-motorola", longTitle, lines = 2)
 
-    private fun shoot(name: String, title: String, lines: Int) {
+    private fun shoot(side: Side, name: String, title: String, lines: Int) {
         val song = Song("x", title, "Zach Bryan", "https://covers.invalid/x.jpg", "3:00", albumName = "The Great American Bar Scene")
         val state = PlayerUiState(
             song = song, isPlaying = true, isSounding = true, isBuffering = false, hasNext = true, shuffle = false, repeatMode = Player.REPEAT_MODE_OFF,
@@ -95,7 +110,8 @@ class LandscapeTitleTest {
         )
         compose.setContent {
             OpenTuneTheme(ThemeSettings()) {
-                Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+                // The bars' share of the window, taken as the player's own inset padding takes it.
+                Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).padding(top = side.barTop.dp, bottom = side.barBottom.dp)) {
                     PlayerLayout(state, position = { 29_000 }, buffered = { 60_000 }, actions = PlayerActions({}, {}, {}, {}, {}, {}, {}, {}, {}), initialLyrics = false)
                 }
             }
@@ -115,14 +131,20 @@ class LandscapeTitleTest {
         assertTrue("$title should take $lines line(s), took ${titleBox.height / line}", titleBox.height > (lines - 0.4f) * line)
         assertTrue("$title took more than $lines line(s): ${titleBox.height / line}", titleBox.height < (lines + 0.4f) * line)
 
-        // Nothing pushed off the window, and the volume row keeps its place: the second title line
-        // must not cost it. The queue button sits at the end of that row.
+        // Nothing pushed out of the space the bars leave, and the volume row keeps its place: the
+        // second title line must not cost it. The queue button sits at the end of that row.
         val root = compose.onRoot().fetchSemanticsNode().boundsInRoot
+        val window = root.height / compose.density.density
+        assertTrue("the side should be the phone's ${side.window}dp window, rendered ${window}dp", kotlin.math.abs(window - side.window) < 1.5f)
+        val room = with(compose.density) {
+            androidx.compose.ui.geometry.Rect(root.left, root.top + side.barTop.dp.toPx(), root.right, root.bottom - side.barBottom.dp.toPx())
+        }
+        assertTrue("the title runs past the room left on this side ($titleBox in $room)", titleBox.bottom <= room.bottom + 0.5f)
         for (label in listOf("Close player", "Pause", "Choose where it plays", "Audio output", "Volume down", "Queue")) {
             val box = compose.onNodeWithContentDescription(label, useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
-            assertTrue("$label sits above the window: $box", box.top >= 0f)
-            assertTrue("$label is clipped at the bottom ($box in $root)", box.bottom <= root.bottom + 0.5f)
-            assertTrue("$label is clipped at the right ($box in $root)", box.right <= root.right + 0.5f)
+            assertTrue("$label sits above the room ($box in $room)", box.top >= room.top - 0.5f)
+            assertTrue("$label is clipped at the bottom ($box in $room)", box.bottom <= room.bottom + 0.5f)
+            assertTrue("$label is clipped at the right ($box in $room)", box.right <= root.right + 0.5f)
         }
     }
 }
