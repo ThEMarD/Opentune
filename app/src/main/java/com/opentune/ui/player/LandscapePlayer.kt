@@ -140,12 +140,9 @@ internal fun LandscapePlayer(
         }
         Spacer(Modifier.width(32.dp))
         BoxWithConstraints(Modifier.weight(1f).fillMaxHeight().focusGroup()) {
-            val tall = maxHeight >= 300.dp
+            // Short screens drop the coming lines first, then the volume.
+            val roomy = maxHeight >= 300.dp
             var titleLines by remember { mutableIntStateOf(1) }
-            // Short screens drop the coming lines first, then the volume. A name long enough to take
-            // two lines costs a line of height, so on a screen that can't hold both the volume gives
-            // way to the name, the same trade short screens already make.
-            val roomy = tall && !(maxHeight < 340.dp && titleLines > 1)
             Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.SpaceBetween) {
                 Row(verticalAlignment = Alignment.Top) {
                     // Lyrics or the queue in the cover's place: the cover stays in sight, small, before the title.
@@ -170,7 +167,7 @@ internal fun LandscapePlayer(
                             song.title,
                             style = MaterialTheme.typography.headlineSmall,
                             fontWeight = FontWeight.Bold,
-                            maxLines = if (side == null && tall) 2 else 1,
+                            maxLines = if (side == null && roomy) 2 else 1,
                             overflow = TextOverflow.Ellipsis,
                             onTextLayout = { titleLines = it.lineCount },
                         )
@@ -189,7 +186,9 @@ internal fun LandscapePlayer(
                 if (state.ui.sourcePill) SourceQualityBadge(song.videoId, state.audioFormat, onClick = onSignal, modifier = Modifier.align(Alignment.CenterHorizontally))
                 // The line being sung and the next, together above the controls, in the lyrics' own type.
                 val lines = if (showLines) rememberLyricLines(state.lyrics, lyricsPosition) else null
-                if (lines != null) LyricsPeek(lines, next = roomy, animate = animate, onClick = onLyrics)
+                // The coming line gives way to a name that needs a second one: one line of height
+                // either way, and what is being sung matters more than what comes next.
+                if (lines != null) LyricsPeek(lines, next = roomy && titleLines < 2, animate = animate, onClick = onLyrics)
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         RoundIcon(if (liked) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder, if (liked) "Unlike" else "Like", { haptics.pattern(if (liked) com.opentune.ui.components.Haptics.Pattern.OFF else com.opentune.ui.components.Haptics.Pattern.LIKE); onLike() }, tint = if (liked) scheme.primary else scheme.onSurface)

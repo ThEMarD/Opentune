@@ -27,7 +27,8 @@ import org.robolectric.annotation.Config
 class TitleFlightActionsTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
 
-    @Test fun moreWorksOnBothCopiesOfTheTravellingTitle() {
+    /** The travelling title has one row now, so its menu opens wherever the title has got to. */
+    @Test fun moreWorksOnTheTravellingTitle() {
         AppSettings.init(ApplicationProvider.getApplicationContext<Application>())
         val progress = mutableFloatStateOf(0f)
         var opens = 0
@@ -41,10 +42,11 @@ class TitleFlightActionsTest {
                 }
             }
         }
-        // These are the actual callbacks on the two crossfading title rows.
-        compose.onAllNodesWithContentDescription("More")[0].performClick()
+        compose.onNodeWithContentDescription("More").performClick()
+        assertEquals(1, opens)
+        // Still the same button once the title has travelled to the header.
         compose.runOnIdle { progress.floatValue = 0.8f }
-        compose.onAllNodesWithContentDescription("More")[1].performClick()
+        compose.onNodeWithContentDescription("More").performClick()
         assertEquals(2, opens)
     }
 }
