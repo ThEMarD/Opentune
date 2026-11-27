@@ -1595,9 +1595,10 @@ private fun RowScope.TitleRow(
             else MaterialTheme.typography.titleMedium,
         )
     }
-    Spacer(Modifier.width(10.dp))
+    Spacer(Modifier.width(8.dp))
     if (apple) StarButton(liked, onLike) else HeartButton(liked, onLike)
     // Shuffle and repeat beside the heart, so all three are together without opening the queue.
+    // Smaller than the heart, and tight against it, so the title keeps its width.
     modes?.let { m ->
         val haptics = com.opentune.ui.components.rememberHaptics()
         ModeButton(
@@ -1628,7 +1629,7 @@ private fun RowScope.TitleRow(
             m.onRepeat()
         }
     }
-    Spacer(Modifier.width(10.dp))
+    Spacer(Modifier.width(8.dp))
     Box(
         Modifier.size(46.dp).clip(CircleShape)
             .background(if (apple) Color.White.copy(alpha = 0.14f) else LocalContentColor.current.copy(alpha = PLAYER_BUTTON_TINT))
@@ -1739,7 +1740,7 @@ private fun ModeButton(
     onClick: () -> Unit,
 ) {
     Box(
-        Modifier.size(46.dp)
+        Modifier.size(38.dp)
             .clip(CircleShape)
             .background(LocalContentColor.current.copy(alpha = PLAYER_BUTTON_TINT))
             .clickable(
@@ -1749,7 +1750,7 @@ private fun ModeButton(
             ),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(icon, label, Modifier.size(24.dp), tint = if (on) MaterialTheme.colorScheme.primary else LocalContentColor.current)
+        Icon(icon, label, Modifier.size(21.dp), tint = if (on) MaterialTheme.colorScheme.primary else LocalContentColor.current)
     }
 }
 
