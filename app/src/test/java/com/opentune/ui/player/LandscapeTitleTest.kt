@@ -40,6 +40,20 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
 /**
+ * A phone on its side: the window the screen reports, and how much of its top and bottom the
+ * system bars keep — the player lays itself out in what is left, as its own
+ * `windowInsetsPadding(systemBars)` does. Both read off the phones: `wm size` and `wm density`
+ * for the window, and the title's top and the volume row's bottom in the player against them.
+ *
+ * Lenovo: 2340x1080 at 440dpi, its content running 127..991px down the window.
+ * motorola: 2400x1080 at 400dpi, its content running 115..1000px down the window.
+ */
+internal class Side(val window: Int, val barTop: Int, val barBottom: Int)
+
+internal val lenovoSide = Side(window = 393, barTop = 28, barBottom = 15)
+internal val motorolaSide = Side(window = 432, barTop = 28, barBottom = 22)
+
+/**
  * The title on its side: a name too long for one line takes two and the rows under it keep
  * their places, on the narrow screens where that is tightest.
  */
@@ -48,20 +62,6 @@ import org.robolectric.annotation.GraphicsMode
 @Config(sdk = [35], qualifiers = "w851dp-h350dp-land-xxhdpi", application = android.app.Application::class)
 class LandscapeTitleTest {
     @get:Rule val compose = createAndroidComposeRule<androidx.activity.ComponentActivity>()
-
-    /**
-     * A phone on its side: the window the screen reports, and how much of its top and bottom the
-     * system bars keep — the player lays itself out in what is left, as its own
-     * `windowInsetsPadding(systemBars)` does. Both read off the phones: `wm size` and `wm density`
-     * for the window, and the title's top and the volume row's bottom in the player against them.
-     *
-     * Lenovo: 2340x1080 at 440dpi, its content running 127..991px down the window.
-     * motorola: 2400x1080 at 400dpi, its content running 115..1000px down the window.
-     */
-    private class Side(val window: Int, val barTop: Int, val barBottom: Int)
-
-    private val lenovo = Side(window = 393, barTop = 28, barBottom = 15)
-    private val motorola = Side(window = 432, barTop = 28, barBottom = 22)
 
     /** 45 characters: the longest name in the library, "I Remember Everything (feat. Kacey Musgraves)". */
     private val longTitle = "I Remember Everything (feat. Kacey Musgraves)"
@@ -92,14 +92,14 @@ class LandscapeTitleTest {
      * hold a second title line beside everything else.
      */
     @Test @Config(qualifiers = "w851dp-h393dp-land-xxhdpi")
-    fun longTitleTakesTwoLinesAndNothingIsClipped() = shoot(lenovo, "landscape/title-long-lenovo", longTitle, lines = 2)
+    fun longTitleTakesTwoLinesAndNothingIsClipped() = shoot(lenovoSide, "landscape/title-long-lenovo", longTitle, lines = 2)
 
     @Test @Config(qualifiers = "w851dp-h393dp-land-xxhdpi")
-    fun shortTitleStaysOnOneLine() = shoot(lenovo, "landscape/title-short-lenovo", shortTitle, lines = 1)
+    fun shortTitleStaysOnOneLine() = shoot(lenovoSide, "landscape/title-short-lenovo", shortTitle, lines = 1)
 
     /** The motorola's taller side has room for the second line and both lyric lines. */
     @Test @Config(qualifiers = "w960dp-h432dp-land-xxhdpi")
-    fun longTitleTakesTwoLinesOnTallerScreen() = shoot(motorola, "landscape/title-long-motorola", longTitle, lines = 2)
+    fun longTitleTakesTwoLinesOnTallerScreen() = shoot(motorolaSide, "landscape/title-long-motorola", longTitle, lines = 2)
 
     private fun shoot(side: Side, name: String, title: String, lines: Int) {
         val song = Song("x", title, "Zach Bryan", "https://covers.invalid/x.jpg", "3:00", albumName = "The Great American Bar Scene")

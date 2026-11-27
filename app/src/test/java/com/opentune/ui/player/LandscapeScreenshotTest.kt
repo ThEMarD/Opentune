@@ -4,9 +4,11 @@ import android.graphics.Bitmap
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.unit.dp
 import androidx.media3.common.Player
 import androidx.test.core.app.ApplicationProvider
 import coil3.ImageLoader
@@ -33,10 +35,13 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
-/** The player on its side, with the cover, then with lyrics, to build/screenshots/landscape. */
+/**
+ * The player on its side, with the cover, then with lyrics, to build/screenshots/landscape — on
+ * each phone's own window less its system bars, so nothing the bars eat goes unrendered.
+ */
 @RunWith(RobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
-@Config(sdk = [35], qualifiers = "w891dp-h411dp-land-xxhdpi", application = android.app.Application::class)
+@Config(sdk = [35], qualifiers = "w851dp-h393dp-land-xxhdpi", application = android.app.Application::class)
 class LandscapeScreenshotTest {
     @get:Rule val compose = createAndroidComposeRule<androidx.activity.ComponentActivity>()
 
@@ -61,11 +66,19 @@ class LandscapeScreenshotTest {
         ),
     )
 
-    @Test fun cover() = shoot("landscape/cover", initialLyrics = false)
+    @Test @Config(qualifiers = "w851dp-h393dp-land-xxhdpi")
+    fun coverOnTheLenovo() = shoot(lenovoSide, "landscape/cover-lenovo", initialLyrics = false)
 
-    @Test fun withLyrics() = shoot("landscape/lyrics", initialLyrics = true)
+    @Test @Config(qualifiers = "w851dp-h393dp-land-xxhdpi")
+    fun lyricsOnTheLenovo() = shoot(lenovoSide, "landscape/lyrics-lenovo", initialLyrics = true)
 
-    private fun shoot(name: String, initialLyrics: Boolean) {
+    @Test @Config(qualifiers = "w960dp-h432dp-land-xxhdpi")
+    fun coverOnTheMotorola() = shoot(motorolaSide, "landscape/cover-motorola", initialLyrics = false)
+
+    @Test @Config(qualifiers = "w960dp-h432dp-land-xxhdpi")
+    fun lyricsOnTheMotorola() = shoot(motorolaSide, "landscape/lyrics-motorola", initialLyrics = true)
+
+    private fun shoot(side: Side, name: String, initialLyrics: Boolean) {
         val state = PlayerUiState(
             song = song, isPlaying = true, isSounding = true, isBuffering = false, hasNext = true, shuffle = false, repeatMode = Player.REPEAT_MODE_OFF,
             durationMs = 180_000, lyrics = lyrics, queue = listOf(song), currentIndex = 0, upNext = emptyList(),
@@ -73,7 +86,8 @@ class LandscapeScreenshotTest {
         )
         compose.setContent {
             OpenTuneTheme(ThemeSettings()) {
-                Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+                // The bars' share of the window, taken as the player's own inset padding takes it.
+                Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).padding(top = side.barTop.dp, bottom = side.barBottom.dp)) {
                     PlayerLayout(state, position = { 29_000 }, buffered = { 60_000 }, actions = PlayerActions({}, {}, {}, {}, {}, {}, {}, {}, {}), initialLyrics = initialLyrics)
                 }
             }
