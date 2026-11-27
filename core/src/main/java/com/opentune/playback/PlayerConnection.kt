@@ -514,11 +514,7 @@ class PlayerConnection(private val context: Context) {
     /** Off, then repeat the whole queue, then repeat the current track. */
     fun cycleRepeatMode() {
         val controller = controller ?: return
-        controller.repeatMode = when (controller.repeatMode) {
-            Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ALL
-            Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ONE
-            else -> Player.REPEAT_MODE_OFF
-        }
+        controller.repeatMode = nextRepeatMode(controller.repeatMode)
     }
 
     /** Queues [song] right after the current track. */

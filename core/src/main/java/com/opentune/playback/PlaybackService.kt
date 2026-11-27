@@ -810,11 +810,12 @@ class PlaybackService : MediaLibraryService() {
      * list they were shown in; [CarLibrary.resolve] queues that list.
      */
     private val sessionCallback = object : MediaLibrarySession.Callback {
-        /** Every controller (notification, Android Auto, Bluetooth) also gets Like and Shuffle. */
+        /** Every controller (notification, Android Auto, Bluetooth) also gets Like, Shuffle and Repeat. */
         override fun onConnect(session: MediaSession, controller: MediaSession.ControllerInfo): MediaSession.ConnectionResult {
             val commands = MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS.buildUpon()
                 .add(LIKE_COMMAND)
                 .add(SHUFFLE_COMMAND)
+                .add(REPEAT_COMMAND)
                 .build()
             return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
                 .setAvailableSessionCommands(commands)
@@ -834,6 +835,9 @@ class PlaybackService : MediaLibraryService() {
                     LibraryStore.setLiked(song, !LibraryStore.isLiked(song.videoId))
                 }
                 ACTION_SHUFFLE -> player.shuffleModeEnabled = !player.shuffleModeEnabled
+                // One tap at a time: the queue, then the song, then off again. It moves the same
+                // repeat mode the app's own button does, so the two always show the same state.
+                ACTION_REPEAT -> player.repeatMode = nextRepeatMode(player.repeatMode)
                 else -> return Futures.immediateFuture(SessionResult(SessionError.ERROR_NOT_SUPPORTED))
             }
             refreshButtons()
@@ -951,20 +955,47 @@ class PlaybackService : MediaLibraryService() {
         }
     }
 
-    /** Like (heart) and Shuffle, as the notification and Android Auto show them now. */
+    /**
+     * Repeat, Shuffle and Like (heart), as the notification and Android Auto show them now.
+     *
+     * The system's media control fills its two button positions beside play/pause from this list
+     * in order and leaves any more to the expanded player, so the two played with most from the
+     * shade, Repeat and Shuffle, come first and Like follows them.
+     */
     private fun mediaButtons(): List<CommandButton> {
         val player = mediaSession?.player
         val liked = player?.currentMediaItem?.mediaId?.let(LibraryStore::isLiked) == true
         val shuffle = player?.shuffleModeEnabled == true
+        val repeat = player?.repeatMode ?: Player.REPEAT_MODE_OFF
         return listOf(
-            CommandButton.Builder(if (liked) CommandButton.ICON_HEART_FILLED else CommandButton.ICON_HEART_UNFILLED)
-                .setDisplayName(com.opentune.i18n.Tr.t(if (liked) "Remove from Liked" else "Like"))
-                .setSessionCommand(LIKE_COMMAND)
-                .setSlots(CommandButton.SLOT_OVERFLOW)
-                .build(),
             CommandButton.Builder(if (shuffle) CommandButton.ICON_SHUFFLE_ON else CommandButton.ICON_SHUFFLE_OFF)
                 .setDisplayName(com.opentune.i18n.Tr.t(if (shuffle) "Shuffle off" else "Shuffle on"))
                 .setSessionCommand(SHUFFLE_COMMAND)
+                .setSlots(CommandButton.SLOT_OVERFLOW)
+                .build(),
+            // The car names the button by what a tap will do, so the next mode is what it says.
+            CommandButton.Builder(
+                when (repeat) {
+                    Player.REPEAT_MODE_ALL -> CommandButton.ICON_REPEAT_ALL
+                    Player.REPEAT_MODE_ONE -> CommandButton.ICON_REPEAT_ONE
+                    else -> CommandButton.ICON_REPEAT_OFF
+                },
+            )
+                .setDisplayName(
+                    com.opentune.i18n.Tr.t(
+                        when (repeat) {
+                            Player.REPEAT_MODE_OFF -> "Repeat the queue"
+                            Player.REPEAT_MODE_ALL -> "Repeat this song"
+                            else -> "Repeat off"
+                        },
+                    ),
+                )
+                .setSessionCommand(REPEAT_COMMAND)
+                .setSlots(CommandButton.SLOT_OVERFLOW)
+                .build(),
+            CommandButton.Builder(if (liked) CommandButton.ICON_HEART_FILLED else CommandButton.ICON_HEART_UNFILLED)
+                .setDisplayName(com.opentune.i18n.Tr.t(if (liked) "Remove from Liked" else "Like"))
+                .setSessionCommand(LIKE_COMMAND)
                 .setSlots(CommandButton.SLOT_OVERFLOW)
                 .build(),
         )
@@ -993,6 +1024,9 @@ class PlaybackService : MediaLibraryService() {
             if (events.containsAny(
                     Player.EVENT_MEDIA_ITEM_TRANSITION,
                     Player.EVENT_SHUFFLE_MODE_ENABLED_CHANGED,
+                    // Repeat changed here or in the app: the car's button says what
+                    // the next tap will do, so it has to follow too.
+                    Player.EVENT_REPEAT_MODE_CHANGED,
                     Player.EVENT_IS_PLAYING_CHANGED,
                     Player.EVENT_MEDIA_METADATA_CHANGED,
                 )
@@ -2910,8 +2944,10 @@ class PlaybackService : MediaLibraryService() {
         )
         const val ACTION_LIKE = "com.opentune.LIKE"
         const val ACTION_SHUFFLE = "com.opentune.SHUFFLE"
+        const val ACTION_REPEAT = "com.opentune.REPEAT"
         val LIKE_COMMAND = SessionCommand(ACTION_LIKE, Bundle.EMPTY)
         val SHUFFLE_COMMAND = SessionCommand(ACTION_SHUFFLE, Bundle.EMPTY)
+        val REPEAT_COMMAND = SessionCommand(ACTION_REPEAT, Bundle.EMPTY)
         /** Failed tracks in a row before playback stops on the error. */
         const val MAX_FAILED_IN_ROW = 3
         /** Playing this long means the track's stream really works. */
