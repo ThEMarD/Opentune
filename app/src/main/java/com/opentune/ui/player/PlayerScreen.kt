@@ -1139,6 +1139,10 @@ fun PlayerLayout(
                                                     playing = lyricsPlaying,
                                                     seeks = lyricsSeeks,
                                                     controlsVisible = !controlsHidden,
+                                                    // Docked beside the controls in its half-sheet card, the pane is as
+                                                    // short as the landscape one: stop on whole lines there too. The
+                                                    // phone's own page keeps its tall list and the fade between lines.
+                                                    lineEdges = docked,
                                                 )
                                             } else {
                                                 Text(com.opentune.ui.theme.tr("Queue"), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.padding(vertical = 8.dp))
