@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.unit.dp
 import androidx.media3.common.Player
 import androidx.test.core.app.ApplicationProvider
@@ -27,6 +28,7 @@ import com.opentune.ui.LyricsState
 import com.opentune.ui.theme.OpenTuneTheme
 import java.io.File
 import kotlinx.coroutines.Dispatchers
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -56,15 +58,20 @@ class LandscapeScreenshotTest {
     }
 
     private val song = Song("x", "Sanctuary", "Joji", "https://covers.invalid/sanctuary.jpg", "3:00", albumName = "Nectar")
-    private val lyrics = LyricsState.Found(
+    private val texts = listOf(
+        "In the middle of the night", "More than fun, you're the sanctuary", "Souls that dream alone lie awake",
+        "I'll give you something so real", "Hold on to me",
+    )
+    private fun lyrics(from: Int = 0) = LyricsState.Found(
         Lyrics.Synced(
-            listOf(
-                "In the middle of the night", "More than fun, you're the sanctuary", "Souls that dream alone lie awake",
-                "I'll give you something so real", "Hold on to me",
-            ).mapIndexed { i, t -> LyricLine(i * 20_000L, i * 20_000L + 19_000, t, emptyList(), false) },
+            texts.drop(from).mapIndexed { i, t ->
+                val n = from + i
+                LyricLine(n * 20_000L, n * 20_000L + 19_000, t, emptyList(), false)
+            },
             "test",
         ),
     )
+    private val lyrics = lyrics()
 
     @Test @Config(qualifiers = "w851dp-h393dp-land-xxhdpi")
     fun coverOnTheLenovo() = shoot(lenovoSide, "landscape/cover-lenovo", initialLyrics = false)
@@ -79,9 +86,17 @@ class LandscapeScreenshotTest {
     fun lyricsOnTheMotorola() = shoot(motorolaSide, "landscape/lyrics-motorola", initialLyrics = true)
 
     private fun shoot(side: Side, name: String, initialLyrics: Boolean) {
+        content(side, { lyrics }, initialLyrics)
+        val bitmap = capture()
+        val file = File("build/screenshots/$name.png").apply { parentFile!!.mkdirs() }
+        file.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+    }
+
+    /** The player on [side]'s window, with [lyrics] read again on each frame so a test can swap them. */
+    private fun content(side: Side, lyrics: () -> LyricsState, initialLyrics: Boolean) {
         val state = PlayerUiState(
             song = song, isPlaying = true, isSounding = true, isBuffering = false, hasNext = true, shuffle = false, repeatMode = Player.REPEAT_MODE_OFF,
-            durationMs = 180_000, lyrics = lyrics, queue = listOf(song), currentIndex = 0, upNext = emptyList(),
+            durationMs = 180_000, lyrics = lyrics(), queue = listOf(song), currentIndex = 0, upNext = emptyList(),
             sound = SoundSettings(), theme = ThemeSettings(), ui = InterfaceSettings(liquidGlass = false, reduceAnimation = true),
         )
         compose.setContent {
@@ -92,17 +107,59 @@ class LandscapeScreenshotTest {
                     Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)
                         .padding(start = side.cutout.dp, top = side.barTop.dp, bottom = side.barBottom.dp),
                 ) {
-                    PlayerLayout(state, position = { 29_000 }, buffered = { 60_000 }, actions = PlayerActions({}, {}, {}, {}, {}, {}, {}, {}, {}), initialLyrics = initialLyrics)
+                    PlayerLayout(state.copy(lyrics = lyrics()), position = { 29_000 }, buffered = { 60_000 }, actions = PlayerActions({}, {}, {}, {}, {}, {}, {}, {}, {}), initialLyrics = initialLyrics)
                 }
             }
         }
+    }
+
+    private fun capture(): Bitmap {
         compose.mainClock.advanceTimeBy(3_000)
         compose.waitForIdle()
         val view = compose.activity.window.decorView
         val bitmap = Bitmap.createBitmap(view.width, view.height, Bitmap.Config.ARGB_8888)
         view.draw(android.graphics.Canvas(bitmap))
-        val file = File("build/screenshots/$name.png").apply { parentFile!!.mkdirs() }
-        file.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        return bitmap
+    }
+
+    /**
+     * The pane's top holds the line before the one being sung, and only whole: a line that has
+     * less than most of itself on screen is gone altogether, so nothing is left sliced by the
+     * edge. Shoot the same frame twice, once with that earlier line and once starting at the
+     * sung one, and the band above the sung line must come out the same both times. A word
+     * half drawn up there — the failure this guards — puts different pixels in it.
+     */
+    @Test @Config(qualifiers = "w851dp-h393dp-land-xxhdpi")
+    fun noHalfLineAboveTheSungLine() {
+        val shown = androidx.compose.runtime.mutableStateOf(lyrics)
+        content(lenovoSide, { shown.value }, initialLyrics = true)
+        val withEarlier = capture()
+
+        val sungText = texts[1]
+        val sung = compose.onNodeWithText(sungText, useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        val earlier = compose.onNodeWithText(texts[0], useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        assertTrue("the line before the sung one should sit at the pane's top, it is at $earlier", earlier.bottom > 0f && earlier.bottom <= sung.top)
+
+        // The same frame from the sung line on: everything above it is simply not there.
+        shown.value = lyrics(from = 1)
+        val without = capture()
+        // The swap has to land: without it the two frames would match whatever the pane did.
+        compose.onNodeWithText(texts[0], useUnmergedTree = true).assertDoesNotExist()
+
+        val left = (minOf(earlier.left, sung.left) - 4f).toInt().coerceAtLeast(0)
+        val right = (maxOf(earlier.right, sung.right) + 4f).toInt().coerceAtMost(withEarlier.width - 1)
+        var shown_px = 0
+        for (y in 0 until sung.top.toInt()) for (x in left..right) {
+            val a = withEarlier.getPixel(x, y)
+            val b = without.getPixel(x, y)
+            val delta = maxOf(
+                kotlin.math.abs((a shr 16 and 0xFF) - (b shr 16 and 0xFF)),
+                kotlin.math.abs((a shr 8 and 0xFF) - (b shr 8 and 0xFF)),
+                kotlin.math.abs((a and 0xFF) - (b and 0xFF)),
+            )
+            if (delta > 4) shown_px++
+        }
+        assertTrue("$shown_px px of the line before the sung one still show above it", shown_px == 0)
     }
 }
 
