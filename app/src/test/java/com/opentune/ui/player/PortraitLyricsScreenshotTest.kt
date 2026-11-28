@@ -86,6 +86,13 @@ class PortraitLyricsScreenshotTest {
     @Test @Config(qualifiers = "w900dp-h850dp-xxhdpi")
     fun lyricsInTheDockedPane() = shoot("portrait/lyrics-docked", docked = true, initialLyrics = true)
 
+    /**
+     * The same pane in a window short enough to drop the extras under the controls, so only a
+     * few lines fit. Both ends must still fall between lines, not through the words of one.
+     */
+    @Test @Config(qualifiers = "w900dp-h700dp-xxhdpi")
+    fun lyricsInAShortDockedPane() = shoot("portrait/lyrics-docked-short", docked = true, initialLyrics = true)
+
     private fun shoot(name: String, docked: Boolean, initialLyrics: Boolean, style: PlayerStyle = PlayerStyle.CLASSIC) {
         val state = PlayerUiState(
             song = song, isPlaying = true, isSounding = true, isBuffering = false, hasNext = true, shuffle = false, repeatMode = Player.REPEAT_MODE_OFF,
