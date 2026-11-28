@@ -47,12 +47,13 @@ import org.robolectric.annotation.GraphicsMode
  * The Lenovo's bars are read off the phone in landscape, from the `InsetsSource` frames in
  * `dumpsys window`: the status bar runs 0..77px down and the navigation bar 1014..1080px, on a
  * 2340x1080 window at 440dpi — 28dp and 24dp of the 393dp it has. Its cutout is on the left edge
- * in this orientation (75px wide) and `systemBars` leaves the cutout out, so the width is whole.
+ * in this orientation (75px wide, 27dp), and `systemBars` leaves the cutout out, so the player
+ * takes it off the start itself: the side has 27dp less width than the window's 393dp.
  * motorola (still derived): 2400x1080 at 400dpi, its content running 115..1000px down the window.
  */
-internal class Side(val window: Int, val barTop: Int, val barBottom: Int)
+internal class Side(val window: Int, val barTop: Int, val barBottom: Int, val cutout: Int = 0)
 
-internal val lenovoSide = Side(window = 393, barTop = 28, barBottom = 24)
+internal val lenovoSide = Side(window = 393, barTop = 28, barBottom = 24, cutout = 27)
 internal val motorolaSide = Side(window = 432, barTop = 28, barBottom = 22)
 
 /**
@@ -112,8 +113,12 @@ class LandscapeTitleTest {
         )
         compose.setContent {
             OpenTuneTheme(ThemeSettings()) {
-                // The bars' share of the window, taken as the player's own inset padding takes it.
-                Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).padding(top = side.barTop.dp, bottom = side.barBottom.dp)) {
+                // The bars' and the cutout's share of the window, taken as the player's own
+                // `systemBars.union(displayCutout)` padding takes it.
+                Box(
+                    Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)
+                        .padding(start = side.cutout.dp, top = side.barTop.dp, bottom = side.barBottom.dp),
+                ) {
                     PlayerLayout(state, position = { 29_000 }, buffered = { 60_000 }, actions = PlayerActions({}, {}, {}, {}, {}, {}, {}, {}, {}), initialLyrics = false)
                 }
             }
@@ -139,7 +144,7 @@ class LandscapeTitleTest {
         val window = root.height / compose.density.density
         assertTrue("the side should be the phone's ${side.window}dp window, rendered ${window}dp", kotlin.math.abs(window - side.window) < 1.5f)
         val room = with(compose.density) {
-            androidx.compose.ui.geometry.Rect(root.left, root.top + side.barTop.dp.toPx(), root.right, root.bottom - side.barBottom.dp.toPx())
+            androidx.compose.ui.geometry.Rect(root.left + side.cutout.dp.toPx(), root.top + side.barTop.dp.toPx(), root.right, root.bottom - side.barBottom.dp.toPx())
         }
         assertTrue("the title runs past the room left on this side ($titleBox in $room)", titleBox.bottom <= room.bottom + 0.5f)
         for (label in listOf("Close player", "Pause", "Choose where it plays", "Audio output", "Volume down", "Queue")) {

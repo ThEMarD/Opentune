@@ -86,8 +86,12 @@ class LandscapeScreenshotTest {
         )
         compose.setContent {
             OpenTuneTheme(ThemeSettings()) {
-                // The bars' share of the window, taken as the player's own inset padding takes it.
-                Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).padding(top = side.barTop.dp, bottom = side.barBottom.dp)) {
+                // The bars' and the cutout's share of the window, taken as the player's own
+                // `systemBars.union(displayCutout)` padding takes it.
+                Box(
+                    Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)
+                        .padding(start = side.cutout.dp, top = side.barTop.dp, bottom = side.barBottom.dp),
+                ) {
                     PlayerLayout(state, position = { 29_000 }, buffered = { 60_000 }, actions = PlayerActions({}, {}, {}, {}, {}, {}, {}, {}, {}), initialLyrics = initialLyrics)
                 }
             }
