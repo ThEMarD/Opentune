@@ -42,15 +42,17 @@ import org.robolectric.annotation.GraphicsMode
 /**
  * A phone on its side: the window the screen reports, and how much of its top and bottom the
  * system bars keep — the player lays itself out in what is left, as its own
- * `windowInsetsPadding(systemBars)` does. Both read off the phones: `wm size` and `wm density`
- * for the window, and the title's top and the volume row's bottom in the player against them.
+ * `windowInsetsPadding(systemBars)` does. `wm size` and `wm density` give the window.
  *
- * Lenovo: 2340x1080 at 440dpi, its content running 127..991px down the window.
- * motorola: 2400x1080 at 400dpi, its content running 115..1000px down the window.
+ * The Lenovo's bars are read off the phone in landscape, from the `InsetsSource` frames in
+ * `dumpsys window`: the status bar runs 0..77px down and the navigation bar 1014..1080px, on a
+ * 2340x1080 window at 440dpi — 28dp and 24dp of the 393dp it has. Its cutout is on the left edge
+ * in this orientation (75px wide) and `systemBars` leaves the cutout out, so the width is whole.
+ * motorola (still derived): 2400x1080 at 400dpi, its content running 115..1000px down the window.
  */
 internal class Side(val window: Int, val barTop: Int, val barBottom: Int)
 
-internal val lenovoSide = Side(window = 393, barTop = 28, barBottom = 15)
+internal val lenovoSide = Side(window = 393, barTop = 28, barBottom = 24)
 internal val motorolaSide = Side(window = 432, barTop = 28, barBottom = 22)
 
 /**
